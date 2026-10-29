@@ -1,0 +1,37 @@
+{
+  "name": "infuture-ia",
+  "private": true,
+  "description": "infuture IA: an open-source command center to connect, orchestrate and observe AI agents across providers.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "packageManager": "pnpm@10.12.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "eslint .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @infuture/db generate",
+    "db:migrate": "pnpm --filter @infuture/db migrate",
+    "db:studio": "pnpm --filter @infuture/db studio",
+    "vault:key": "pnpm --filter @infuture/vault keygen",
+    "terminal": "node scripts/terminal.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.30.0",
+    "@types/node": "22.15.34",
+    "eslint": "9.30.0",
+    "eslint-plugin-react-hooks": "5.2.0",
+    "globals": "16.3.0",
+    "prettier": "3.6.2",
+    "turbo": "2.5.4",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.35.1"
+  }
+}

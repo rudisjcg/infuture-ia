@@ -1,0 +1,36 @@
+# Local infrastructure for infuture IA / Infraestructura local de infuture IA
+# Start / Iniciar:  docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: infuture-postgres
+    environment:
+      POSTGRES_USER: infuture
+      POSTGRES_PASSWORD: infuture
+      POSTGRES_DB: infuture
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infuture -d infuture"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: infuture-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:

@@ -1,0 +1,20 @@
+{
+  "name": "@infuture/vault",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Envelope encryption and secret redaction for provider credentials in infuture IA.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "keygen": "tsx src/keygen.ts"
+  },
+  "devDependencies": {
+    "tsx": "4.20.3",
+    "vitest": "3.2.4"
+  }
+}

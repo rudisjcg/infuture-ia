@@ -1,0 +1,22 @@
+{
+  "name": "@infuture/events",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Event envelope, event catalog and realtime protocol for infuture IA.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@infuture/i18n": "workspace:*",
+    "vitest": "3.2.4"
+  }
+}

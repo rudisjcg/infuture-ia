@@ -1,0 +1,21 @@
+{
+  "name": "@infuture/providers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider manifests and connection checks (OpenAI, Anthropic, Groq, Ollama) for infuture IA.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@infuture/events": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "3.2.4"
+  }
+}

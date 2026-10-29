@@ -1,0 +1,2068 @@
+<!doctype html>
+<html lang="es" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oficina Virtual 2.5D / 3D - Control de Sprites y Posiciones</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js r128 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #090d16;
+        color: #f1f5f9;
+        user-select: none;
+      }
+      .mono {
+        font-family: "JetBrains Mono", monospace;
+      }
+      #canvas-container {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+      /* Etiquetas flotantes sobre los sprites 2.5D */
+      .sprite-label {
+        position: absolute;
+        transform: translate(-50%, -100%);
+        pointer-events: auto;
+        cursor: pointer;
+        transition:
+          transform 0.15s ease,
+          box-shadow 0.15s ease;
+        z-index: 10;
+        white-space: nowrap;
+      }
+      .sprite-label:hover {
+        transform: translate(-50%, -105%) scale(1.05);
+        z-index: 25;
+      }
+      .sprite-label.active-char {
+        z-index: 30;
+      }
+      /* Scrollbar estilizada */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(15, 23, 42, 0.6);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(71, 85, 105, 0.8);
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(99, 102, 241, 0.8);
+      }
+      /* Sliders personalizados */
+      input[type="range"] {
+        -webkit-appearance: none;
+        background: transparent;
+      }
+      input[type="range"]::-webkit-slider-runnable-track {
+        height: 6px;
+        border-radius: 4px;
+        background: #1e293b;
+        border: 1px solid #334155;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 16px;
+        width: 16px;
+        border-radius: 50%;
+        background: #6366f1;
+        margin-top: -6px;
+        cursor: pointer;
+        box-shadow: 0 0 8px rgba(99, 102, 241, 0.8);
+      }
+      .glass-panel {
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(51, 65, 85, 0.65);
+      }
+      @keyframes pulse-ring {
+        0% {
+          transform: scale(0.95);
+          opacity: 0.9;
+        }
+        50% {
+          transform: scale(1.08);
+          opacity: 0.4;
+        }
+        100% {
+          transform: scale(0.95);
+          opacity: 0.9;
+        }
+      }
+      .badge-pulse {
+        animation: pulse-ring 2s infinite ease-in-out;
+      }
+    </style>
+  </head>
+  <body class="w-screen h-screen overflow-hidden relative">
+    <!-- Contenedor 3D de Three.js -->
+    <div id="canvas-container"></div>
+
+    <!-- Contenedor de Etiquetas Flotantes 2D/3D (Nameplates + Coordenadas en tiempo real) -->
+    <div id="labels-container" class="absolute inset-0 pointer-events-none overflow-hidden z-10"></div>
+
+    <!-- BARRA SUPERIOR: Título, Cámaras y Controles Globales -->
+    <header
+      class="absolute top-3 left-3 right-3 md:right-[395px] z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none"
+    >
+      <!-- Logo y Estado -->
+      <div class="glass-panel px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 pointer-events-auto">
+        <div
+          class="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-inner"
+        >
+          <i class="ph-duotone ph-cube-focus text-xl"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-sm md:text-base tracking-tight text-white">Oficina Virtual 2.5D</h1>
+            <span
+              class="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+              >En Vivo</span
+            >
+          </div>
+          <p class="text-[11px] text-slate-400 hidden sm:block">
+            WASD / Flechas o Clic en el suelo para mover • Arrastra para rotar cámara
+          </p>
+        </div>
+      </div>
+
+      <!-- Botones de Vista de Cámara y Opciones -->
+      <div
+        class="glass-panel p-1.5 rounded-2xl shadow-2xl flex flex-wrap items-center gap-1.5 pointer-events-auto"
+      >
+        <button
+          id="cam-iso"
+          onclick="setCameraMode('iso')"
+          class="px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 bg-indigo-600 text-white shadow transition"
+        >
+          <i class="ph-bold ph-cube"></i>
+          <span>Isométrica</span>
+        </button>
+        <button
+          id="cam-top"
+          onclick="setCameraMode('top')"
+          class="px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/80 transition"
+        >
+          <i class="ph-bold ph-grid-four"></i>
+          <span>Superior 2D</span>
+        </button>
+        <button
+          id="cam-follow"
+          onclick="setCameraMode('follow')"
+          class="px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/80 transition"
+        >
+          <i class="ph-bold ph-crosshair"></i>
+          <span>Seguir Sprite</span>
+        </button>
+        <div class="h-4 w-[1px] bg-slate-700 mx-0.5"></div>
+        <button
+          id="btn-patrol-all"
+          onclick="toggleGlobalPatrol()"
+          class="px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition"
+          title="Activar/Desactivar movimiento autónomo para los personajes no seleccionados"
+        >
+          <i class="ph-fill ph-robot"></i>
+          <span id="patrol-status-text">IA Patrulla: ON</span>
+        </button>
+        <button
+          id="btn-render-mode"
+          onclick="toggleSpriteRenderMode()"
+          class="px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition"
+          title="Alternar entre Sprite 2D Billboard y Avatar 2.5D"
+        >
+          <i class="ph-bold ph-user-focus"></i>
+          <span id="render-mode-text">Modo: 2.5D Mixto</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- D-PAD VIRTUAL Y LEYENDA INFERIOR IZQUIERDA (Ideal para móvil y escritorio) -->
+    <div class="absolute bottom-4 left-4 z-20 flex items-end gap-3 pointer-events-none">
+      <!-- Pad direccional táctil/clic -->
+      <div
+        class="glass-panel p-2.5 rounded-2xl shadow-2xl pointer-events-auto flex flex-col items-center gap-1"
+      >
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5"
+          >Control Directo</span
+        >
+        <button
+          onmousedown="setTouchKey('up', true)"
+          onmouseup="setTouchKey('up', false)"
+          onmouseleave="setTouchKey('up', false)"
+          ontouchstart="setTouchKey('up', true); event.preventDefault();"
+          ontouchend="setTouchKey('up', false)"
+          class="w-10 h-10 rounded-xl bg-slate-800/90 hover:bg-indigo-600 active:scale-95 text-slate-200 flex items-center justify-center border border-slate-700 transition shadow"
+        >
+          <i class="ph-bold ph-caret-up text-lg"></i>
+        </button>
+        <div class="flex gap-1">
+          <button
+            onmousedown="setTouchKey('left', true)"
+            onmouseup="setTouchKey('left', false)"
+            onmouseleave="setTouchKey('left', false)"
+            ontouchstart="setTouchKey('left', true); event.preventDefault();"
+            ontouchend="setTouchKey('left', false)"
+            class="w-10 h-10 rounded-xl bg-slate-800/90 hover:bg-indigo-600 active:scale-95 text-slate-200 flex items-center justify-center border border-slate-700 transition shadow"
+          >
+            <i class="ph-bold ph-caret-left text-lg"></i>
+          </button>
+          <button
+            onclick="centerOnActiveCharacter()"
+            class="w-10 h-10 rounded-xl bg-indigo-950/80 hover:bg-indigo-700 text-indigo-300 flex items-center justify-center border border-indigo-700/50 transition text-xs font-bold"
+            title="Centrar en personaje"
+          >
+            <i class="ph-bold ph-gps"></i>
+          </button>
+          <button
+            onmousedown="setTouchKey('right', true)"
+            onmouseup="setTouchKey('right', false)"
+            onmouseleave="setTouchKey('right', false)"
+            ontouchstart="setTouchKey('right', true); event.preventDefault();"
+            ontouchend="setTouchKey('right', false)"
+            class="w-10 h-10 rounded-xl bg-slate-800/90 hover:bg-indigo-600 active:scale-95 text-slate-200 flex items-center justify-center border border-slate-700 transition shadow"
+          >
+            <i class="ph-bold ph-caret-right text-lg"></i>
+          </button>
+        </div>
+        <button
+          onmousedown="setTouchKey('down', true)"
+          onmouseup="setTouchKey('down', false)"
+          onmouseleave="setTouchKey('down', false)"
+          ontouchstart="setTouchKey('down', true); event.preventDefault();"
+          ontouchend="setTouchKey('down', false)"
+          class="w-10 h-10 rounded-xl bg-slate-800/90 hover:bg-indigo-600 active:scale-95 text-slate-200 flex items-center justify-center border border-slate-700 transition shadow"
+        >
+          <i class="ph-bold ph-caret-down text-lg"></i>
+        </button>
+      </div>
+
+      <!-- Telemetría del cursor sobre el piso -->
+      <div
+        class="glass-panel px-3.5 py-2.5 rounded-2xl shadow-xl pointer-events-auto hidden sm:flex flex-col gap-1 min-w-[210px]"
+      >
+        <div class="flex items-center justify-between text-[11px] text-slate-400">
+          <span class="flex items-center gap-1"
+            ><i class="ph-fill ph-cursor-click text-indigo-400"></i> Cursor en Piso:</span
+          >
+          <span id="hover-zone-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300"
+            >Pasillo</span
+          >
+        </div>
+        <div class="flex items-center justify-between mono text-xs font-semibold text-white">
+          <span id="hover-xyz">X: 0.00 | Z: 0.00</span>
+          <span id="hover-grid" class="text-indigo-400">[C:10, F:10]</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL LATERAL DERECHO: Inspector de Personajes y Posiciones -->
+    <aside
+      class="absolute top-3 bottom-3 right-3 w-[340px] md:w-[375px] z-20 glass-panel rounded-2xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto transition-transform duration-300"
+      id="inspector-panel"
+    >
+      <!-- Cabecera del Inspector -->
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+        <div class="flex items-center gap-2.5">
+          <i class="ph-duotone ph-users-three text-indigo-400 text-xl"></i>
+          <div>
+            <h2 class="font-bold text-sm text-white leading-tight">Inspector de Sprites y Posición</h2>
+            <p class="text-[11px] text-slate-400">Coordenadas (X, Y, Z) y Grilla 2.5D</p>
+          </div>
+        </div>
+        <button
+          onclick="spawnNewCharacter()"
+          class="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold flex items-center gap-1 shadow-lg shadow-indigo-600/30 transition"
+        >
+          <i class="ph-bold ph-plus"></i>
+          <span>Nuevo Sprite</span>
+        </button>
+      </div>
+
+      <!-- Contenido scrolleable -->
+      <div class="flex-1 overflow-y-auto p-3.5 space-y-4">
+        <!-- Tarjeta del Personaje Seleccionado (Control de Coordenadas en Tiempo Real) -->
+        <div class="rounded-xl bg-slate-900/90 border border-indigo-500/40 p-3.5 shadow-inner space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <div
+                id="active-avatar-preview"
+                class="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-md border border-white/20 text-sm"
+              >
+                <!-- Icono / Inicial -->
+              </div>
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span id="active-char-name" class="font-bold text-sm text-white">Carlos (Dev)</span>
+                  <span
+                    class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold"
+                    >ACTIVO</span
+                  >
+                </div>
+                <p id="active-char-state" class="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span>En escritorio</span>
+                </p>
+              </div>
+            </div>
+            <div class="text-right mono">
+              <span class="text-[10px] text-slate-400 block">CELDA GRILLA</span>
+              <span id="active-char-grid" class="text-xs font-bold text-amber-300">Col 0, Fila 0</span>
+            </div>
+          </div>
+
+          <!-- Coordenadas Numéricas Editables X, Y, Z -->
+          <div class="grid grid-cols-3 gap-2 pt-1">
+            <div class="bg-slate-950/80 border border-slate-800 rounded-lg p-2">
+              <label class="text-[10px] font-bold text-rose-400 flex items-center justify-between">
+                <span>POSICIÓN X</span>
+                <span class="mono text-[9px] text-slate-500">m</span>
+              </label>
+              <input
+                id="input-pos-x"
+                type="number"
+                step="0.5"
+                min="-9.5"
+                max="9.5"
+                onchange="manualCoordInput()"
+                class="w-full bg-transparent mono font-bold text-sm text-white focus:outline-none mt-0.5"
+              />
+            </div>
+            <div class="bg-slate-950/80 border border-slate-800 rounded-lg p-2">
+              <label class="text-[10px] font-bold text-emerald-400 flex items-center justify-between">
+                <span>ALTURA Y</span>
+                <span class="mono text-[9px] text-slate-500">m</span>
+              </label>
+              <input
+                id="input-pos-y"
+                type="number"
+                step="0.1"
+                readonly
+                class="w-full bg-transparent mono font-bold text-sm text-slate-300 focus:outline-none mt-0.5 cursor-not-allowed"
+              />
+            </div>
+            <div class="bg-slate-950/80 border border-slate-800 rounded-lg p-2">
+              <label class="text-[10px] font-bold text-sky-400 flex items-center justify-between">
+                <span>POSICIÓN Z</span>
+                <span class="mono text-[9px] text-slate-500">m</span>
+              </label>
+              <input
+                id="input-pos-z"
+                type="number"
+                step="0.5"
+                min="-9.5"
+                max="9.5"
+                onchange="manualCoordInput()"
+                class="w-full bg-transparent mono font-bold text-sm text-white focus:outline-none mt-0.5"
+              />
+            </div>
+          </div>
+
+          <!-- Sliders de Teletransporte Suave en X y Z -->
+          <div class="space-y-2 pt-1">
+            <div>
+              <div class="flex justify-between text-[11px] mb-1">
+                <span class="text-slate-400">Deslizar Eje X (Oeste ↔ Este)</span>
+                <span id="slider-x-val" class="mono text-rose-400 font-semibold">0.0</span>
+              </div>
+              <input
+                id="slider-pos-x"
+                type="range"
+                min="-9.2"
+                max="9.2"
+                step="0.1"
+                oninput="sliderCoordInput()"
+                class="w-full"
+              />
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] mb-1">
+                <span class="text-slate-400">Deslizar Eje Z (Norte ↔ Sur)</span>
+                <span id="slider-z-val" class="mono text-sky-400 font-semibold">0.0</span>
+              </div>
+              <input
+                id="slider-pos-z"
+                type="range"
+                min="-9.2"
+                max="9.2"
+                step="0.1"
+                oninput="sliderCoordInput()"
+                class="w-full"
+              />
+            </div>
+          </div>
+
+          <!-- Botones de Ir a Zona de la Oficina -->
+          <div class="pt-1">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5"
+              >Enviar Personaje Activo a Zona:</span
+            >
+            <div class="grid grid-cols-2 gap-1.5">
+              <button
+                onclick="sendActiveToZone('dev')"
+                class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-slate-700/80 text-xs text-slate-200 flex items-center gap-1.5 transition"
+              >
+                <i class="ph-duotone ph-desktop text-indigo-400"></i>
+                <span>Zona Dev (-5, -5)</span>
+              </button>
+              <button
+                onclick="sendActiveToZone('meeting')"
+                class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-slate-700/80 text-xs text-slate-200 flex items-center gap-1.5 transition"
+              >
+                <i class="ph-duotone ph-presentation-chart text-emerald-400"></i>
+                <span>Sala Juntas (5, -5)</span>
+              </button>
+              <button
+                onclick="sendActiveToZone('coffee')"
+                class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-slate-700/80 text-xs text-slate-200 flex items-center gap-1.5 transition"
+              >
+                <i class="ph-duotone ph-coffee text-amber-400"></i>
+                <span>Cafetería (-5, 5)</span>
+              </button>
+              <button
+                onclick="sendActiveToZone('servers')"
+                class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-slate-700/80 text-xs text-slate-200 flex items-center gap-1.5 transition"
+              >
+                <i class="ph-duotone ph-hard-drives text-sky-400"></i>
+                <span>Servidores (6, 5)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lista de Todos los Personajes en la Oficina -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400"
+              >Sprites en la Oficina (<span id="char-count">4</span>)</span
+            >
+            <span class="text-[11px] text-slate-500">Clic para controlar</span>
+          </div>
+          <div id="characters-list" class="space-y-2">
+            <!-- Renderizado dinámicamente -->
+          </div>
+        </div>
+
+        <!-- Mini-Mapa Radar 2D en Tiempo Real -->
+        <div class="rounded-xl bg-slate-900/90 border border-slate-800 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+              <i class="ph-duotone ph-radar text-indigo-400"></i>
+              Mapa de Coordenadas 2D (Clic para mover)
+            </span>
+            <span class="mono text-[10px] text-slate-400">20m × 20m</span>
+          </div>
+          <div
+            class="relative w-full aspect-square bg-slate-950 rounded-lg border border-slate-800 overflow-hidden cursor-crosshair"
+          >
+            <canvas id="minimap-canvas" width="280" height="280" class="w-full h-full block"></canvas>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <script>
+      // ============================================================================
+      // CONFIGURACIÓN DE LA OFICINA Y CONSTANTES DE LA GRILLA
+      // ============================================================================
+      const OFFICE_SIZE = 20; // 20x20 metros (-10 a +10 en X y Z)
+      const HALF_SIZE = OFFICE_SIZE / 2;
+
+      // Zonas clave de la oficina para estados y teletransporte
+      const OFFICE_ZONES = {
+        dev: { name: "Escritorios Dev", x: -4.5, z: -4.2, radius: 4.2, color: "#6366f1" },
+        meeting: { name: "Sala de Juntas", x: 5.0, z: -5.0, radius: 3.8, color: "#10b981" },
+        coffee: { name: "Cafetería / Lounge", x: -5.2, z: 5.2, radius: 3.8, color: "#f59e0b" },
+        servers: { name: "Racks Servidores", x: 5.8, z: 5.2, radius: 3.5, color: "#0ea5e9" },
+        center: { name: "Recepción Central", x: 0.0, z: 0.0, radius: 3.0, color: "#a855f7" },
+      };
+
+      // Catálogo de plantillas para nuevos personajes
+      const CHARACTER_TEMPLATES = [
+        {
+          name: "Carlos",
+          role: "Fullstack Dev",
+          color: "#6366f1",
+          shirt: "#4f46e5",
+          hair: "#1e1b4b",
+          skin: "#fcd34d",
+          accessory: "glasses",
+        },
+        {
+          name: "Sofía",
+          role: "UX Designer",
+          color: "#ec4899",
+          shirt: "#db2777",
+          hair: "#701a75",
+          skin: "#fde68a",
+          accessory: "headphones",
+        },
+        {
+          name: "Mateo",
+          role: "SysAdmin / SRE",
+          color: "#10b981",
+          shirt: "#059669",
+          hair: "#064e3b",
+          skin: "#f59e0b",
+          accessory: "cap",
+        },
+        {
+          name: "Elena",
+          role: "Product Lead",
+          color: "#f59e0b",
+          shirt: "#d97706",
+          hair: "#78350f",
+          skin: "#fed7aa",
+          accessory: "badge",
+        },
+        {
+          name: "Diego",
+          role: "QA Engineer",
+          color: "#06b6d4",
+          shirt: "#0891b2",
+          hair: "#0f172a",
+          skin: "#fcd34d",
+          accessory: "glasses",
+        },
+        {
+          name: "Valeria",
+          role: "Data Scientist",
+          color: "#a855f7",
+          shirt: "#9333ea",
+          hair: "#3b0764",
+          skin: "#fde68a",
+          accessory: "headphones",
+        },
+        {
+          name: "Lucas",
+          role: "AI Researcher",
+          color: "#f43f5e",
+          shirt: "#e11d48",
+          hair: "#31102f",
+          skin: "#fbd38d",
+          accessory: "cap",
+        },
+      ];
+
+      // Variables de Three.js
+      let scene, camera, renderer, floorMesh, targetMarkerMesh, activeRingMesh, pathLineMesh;
+      let raycaster = new THREE.Raycaster();
+      let mouse = new THREE.Vector2();
+      let clock = new THREE.Clock();
+
+      // Estado de Cámara Orbital / Modos
+      let cameraMode = "iso"; // 'iso', 'top', 'follow'
+      let camSpherical = { radius: 22, theta: Math.PI / 4, phi: Math.PI / 3.2 };
+      let camTarget = new THREE.Vector3(0, 0, 0);
+      let isDraggingCamera = false;
+      let isPanningCamera = false;
+      let pointerDownPos = { x: 0, y: 0 };
+      let prevPointerPos = { x: 0, y: 0 };
+
+      // Estado de los Personajes (Sprites 2.5D)
+      let characters = [];
+      let activeCharId = 0;
+      let globalPatrolEnabled = true;
+      let renderMode = "hybrid"; // 'hybrid' (Sprite 2D + Base 3D), 'sprite' (Puro 2D Billboard), 'avatar3d' (Voxel 2.5D)
+
+      // Controles de Teclado y D-Pad
+      const keysPressed = {
+        w: false,
+        a: false,
+        s: false,
+        d: false,
+        up: false,
+        left: false,
+        down: false,
+        right: false,
+      };
+      const touchKeys = { up: false, left: false, down: false, right: false };
+
+      // Obstáculos circulares simples para evitar atravesar muebles grandes
+      const furnitureColliders = [];
+
+      // Coordenadas del cursor en el piso
+      let hoveredFloorPoint = new THREE.Vector3(0, 0, 0);
+
+      // ============================================================================
+      // GENERADOR DE TEXTURAS PIXEL/VECTOR PARA SPRITES 2D ANIMADOS
+      // ============================================================================
+      function createCharacterSpriteSheetFrame(template, frameIndex, facingLeft) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 128;
+        canvas.height = 160;
+        const ctx = canvas.getContext("2d");
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+
+        // Si mira a la izquierda, invertimos horizontalmente el dibujo del personaje
+        if (facingLeft) {
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+        }
+
+        // Animación de caminata (frames 1 y 2 mueven piernas y brazos)
+        const walkOffset = frameIndex === 1 ? -4 : frameIndex === 2 ? 4 : 0;
+        const bodyBob = frameIndex === 1 || frameIndex === 2 ? -3 : 0;
+
+        // Sombra suave bajo los pies dentro del sprite
+        ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+        ctx.beginPath();
+        ctx.ellipse(64, 148, 28, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pierna Izquierda
+        ctx.fillStyle = "#1e293b";
+        ctx.beginPath();
+        ctx.roundRect(44, 105 + (walkOffset > 0 ? -5 : 0), 16, 36, 6);
+        ctx.fill();
+        // Zapato Izquierdo
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.roundRect(42, 135 + (walkOffset > 0 ? -5 : 0), 20, 10, 4);
+        ctx.fill();
+
+        // Pierna Derecha
+        ctx.fillStyle = "#334155";
+        ctx.beginPath();
+        ctx.roundRect(68, 105 + (walkOffset < 0 ? -5 : 0), 16, 36, 6);
+        ctx.fill();
+        // Zapato Derecho
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.roundRect(68, 135 + (walkOffset < 0 ? -5 : 0), 20, 10, 4);
+        ctx.fill();
+
+        // Torso / Camisa con borde estilo 2.5D Paper-RPG
+        ctx.fillStyle = template.shirt;
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(36, 62 + bodyBob, 56, 50, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        // Detalle de corbata / gafete de oficina
+        ctx.fillStyle = "#f8fafc";
+        ctx.beginPath();
+        ctx.roundRect(66, 74 + bodyBob, 14, 18, 3);
+        ctx.fill();
+        ctx.fillStyle = template.color;
+        ctx.fillRect(68, 77 + bodyBob, 10, 5);
+
+        // Brazo Izquierdo
+        ctx.fillStyle = template.shirt;
+        ctx.beginPath();
+        ctx.roundRect(24, 66 + bodyBob - walkOffset * 0.8, 14, 34, 7);
+        ctx.fill();
+        ctx.stroke();
+
+        // Brazo Derecho
+        ctx.beginPath();
+        ctx.roundRect(90, 66 + bodyBob + walkOffset * 0.8, 14, 34, 7);
+        ctx.fill();
+        ctx.stroke();
+
+        // Cabeza
+        ctx.fillStyle = template.skin;
+        ctx.beginPath();
+        ctx.roundRect(38, 18 + bodyBob, 52, 46, 18);
+        ctx.fill();
+        ctx.stroke();
+
+        // Cabello
+        ctx.fillStyle = template.hair;
+        ctx.beginPath();
+        ctx.roundRect(36, 12 + bodyBob, 56, 20, [16, 16, 4, 4]);
+        ctx.fill();
+
+        // Ojos mirando ligeramente hacia la derecha (que se invierte si mira a la izquierda)
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.arc(56, 42 + bodyBob, 4.2, 0, Math.PI * 2);
+        ctx.arc(76, 42 + bodyBob, 4.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Brillo en los ojos
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(57.5, 40.5 + bodyBob, 1.5, 0, Math.PI * 2);
+        ctx.arc(77.5, 40.5 + bodyBob, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Sonrisa amigable
+        ctx.strokeStyle = "#7c2d12";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(66, 48 + bodyBob, 6, 0.15 * Math.PI, 0.85 * Math.PI);
+        ctx.stroke();
+
+        // Accesorios (Lentes, Audífonos o Gorra)
+        if (template.accessory === "glasses") {
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(48, 36 + bodyBob, 15, 11);
+          ctx.strokeRect(68, 36 + bodyBob, 15, 11);
+          ctx.beginPath();
+          ctx.moveTo(63, 41 + bodyBob);
+          ctx.lineTo(68, 41 + bodyBob);
+          ctx.stroke();
+        } else if (template.accessory === "headphones") {
+          ctx.strokeStyle = template.color;
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.arc(64, 36 + bodyBob, 30, Math.PI, 0);
+          ctx.stroke();
+          ctx.fillStyle = template.color;
+          ctx.fillRect(31, 32 + bodyBob, 8, 18);
+          ctx.fillRect(89, 32 + bodyBob, 8, 18);
+        } else if (template.accessory === "cap") {
+          ctx.fillStyle = template.color;
+          ctx.beginPath();
+          ctx.roundRect(34, 10 + bodyBob, 66, 12, 6);
+          ctx.fill();
+        }
+
+        ctx.restore();
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        return texture;
+      }
+
+      // ============================================================================
+      // INICIALIZACIÓN DEL ENTORNO 3D / 2.5D (THREE.JS)
+      // ============================================================================
+      function initThreeJS() {
+        const container = document.getElementById("canvas-container");
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x090d16);
+        scene.fog = new THREE.FogExp2(0x090d16, 0.015);
+
+        camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 120);
+        updateCameraTransform();
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        // Iluminación de Oficina Moderna
+        const ambientLight = new THREE.AmbientLight(0xdbeafe, 0.65);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+        dirLight.position.set(14, 24, 16);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 60;
+        const d = 14;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        dirLight.shadow.bias = -0.0005;
+        scene.add(dirLight);
+
+        // Luces de acento por zona
+        const devLight = new THREE.PointLight(0x6366f1, 0.8, 10);
+        devLight.position.set(-5, 3, -5);
+        scene.add(devLight);
+
+        const coffeeLight = new THREE.PointLight(0xf59e0b, 0.7, 9);
+        coffeeLight.position.set(-5, 3, 5);
+        scene.add(coffeeLight);
+
+        const serverLight = new THREE.PointLight(0x0ea5e9, 0.9, 9);
+        serverLight.position.set(6, 3, 5);
+        scene.add(serverLight);
+
+        // Construir Piso, Paredes y Mobiliario de la Oficina
+        buildOfficeEnvironment();
+
+        // Construir Indicadores Visuales (Anillo activo, Marcador de destino y Línea de ruta)
+        buildNavigationMarkers();
+
+        // Crear los primeros 4 personajes (Sprites 2.5D)
+        spawnInitialCharacters();
+
+        // Eventos de Interacción (Mouse, Touch, Teclado, Resize)
+        setupEventListeners();
+      }
+
+      // ============================================================================
+      // CONSTRUCCIÓN DE LA OFICINA 3D (ESCRITORIOS, SALA JUNTAS, CAFETERÍA, SERVIDORES)
+      // ============================================================================
+      function buildOfficeEnvironment() {
+        // Textura procedural para el piso con cuadrícula numerada
+        const floorCanvas = document.createElement("canvas");
+        floorCanvas.width = 1024;
+        floorCanvas.height = 1024;
+        const fctx = floorCanvas.getContext("2d");
+
+        fctx.fillStyle = "#131c2e";
+        fctx.fillRect(0, 0, 1024, 1024);
+
+        const cells = 20;
+        const step = 1024 / cells;
+
+        for (let x = 0; x < cells; x++) {
+          for (let z = 0; z < cells; z++) {
+            fctx.fillStyle = (x + z) % 2 === 0 ? "#162032" : "#111827";
+            fctx.fillRect(x * step, z * step, step, step);
+            fctx.strokeStyle = "rgba(51, 65, 85, 0.45)";
+            fctx.lineWidth = 2;
+            fctx.strokeRect(x * step, z * step, step, step);
+          }
+        }
+
+        // Ejes centrales X=0 y Z=0 resaltados en el piso
+        fctx.strokeStyle = "rgba(99, 102, 241, 0.4)";
+        fctx.lineWidth = 4;
+        fctx.beginPath();
+        fctx.moveTo(512, 0);
+        fctx.lineTo(512, 1024);
+        fctx.moveTo(0, 512);
+        fctx.lineTo(1024, 512);
+        fctx.stroke();
+
+        const floorTex = new THREE.CanvasTexture(floorCanvas);
+        floorTex.wrapS = THREE.ClampToEdgeWrapping;
+        floorTex.wrapT = THREE.ClampToEdgeWrapping;
+
+        const floorGeo = new THREE.PlaneGeometry(OFFICE_SIZE, OFFICE_SIZE);
+        const floorMat = new THREE.MeshStandardMaterial({
+          map: floorTex,
+          roughness: 0.8,
+          metalness: 0.1,
+        });
+        floorMesh = new THREE.Mesh(floorGeo, floorMat);
+        floorMesh.rotation.x = -Math.PI / 2;
+        floorMesh.receiveShadow = true;
+        floorMesh.name = "office_floor";
+        scene.add(floorMesh);
+
+        // Base exterior bajo el piso
+        const baseGeo = new THREE.BoxGeometry(OFFICE_SIZE + 0.6, 0.5, OFFICE_SIZE + 0.6);
+        const baseMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
+        const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+        baseMesh.position.y = -0.26;
+        scene.add(baseMesh);
+
+        // Paredes bajas estilo corte isométrico (Norte y Oeste altas, Sur y Este bordillo bajo)
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 });
+        const glassMat = new THREE.MeshPhysicalMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.22,
+          roughness: 0.1,
+          transmission: 0.5,
+        });
+
+        // Pared Norte (Z = -10)
+        const northWall = new THREE.Mesh(new THREE.BoxGeometry(OFFICE_SIZE + 0.4, 2.8, 0.3), wallMat);
+        northWall.position.set(0, 1.4, -HALF_SIZE - 0.15);
+        northWall.castShadow = true;
+        northWall.receiveShadow = true;
+        scene.add(northWall);
+
+        // Pared Oeste (X = -10)
+        const westWall = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.8, OFFICE_SIZE + 0.4), wallMat);
+        westWall.position.set(-HALF_SIZE - 0.15, 1.4, 0);
+        westWall.castShadow = true;
+        westWall.receiveShadow = true;
+        scene.add(westWall);
+
+        // Alfombras de colores por zona para identificar áreas visualmente
+        addZoneRug(-5.0, -5.0, 7.5, 6.5, 0x312e81); // Zona Dev (Índigo)
+        addZoneRug(5.0, -5.0, 7.0, 6.5, 0x064e3b); // Sala de Reuniones (Esmeralda)
+        addZoneRug(-5.0, 5.2, 7.2, 6.2, 0x78350f); // Cafetería (Ámbar)
+        addZoneRug(5.5, 5.2, 6.5, 6.2, 0x0c4a6e); // Servidores (Azul)
+
+        // 1. ZONA DE DESARROLLO (Noroeste: X negativo, Z negativo)
+        createWorkstation(-6.5, -6.2, 0);
+        createWorkstation(-3.5, -6.2, 0);
+        createWorkstation(-6.5, -3.5, Math.PI);
+        createWorkstation(-3.5, -3.5, Math.PI);
+
+        // 2. SALA DE REUNIONES (Noreste: X positivo, Z negativo)
+        createMeetingRoom(5.0, -5.0);
+        // Mampara de cristal divisoria de la sala de juntas
+        const dividerGlass = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.2, 6.5), glassMat);
+        dividerGlass.position.set(1.2, 1.1, -5.0);
+        scene.add(dividerGlass);
+
+        // 3. CAFETERÍA Y ZONA DE DESCANSO (Suroeste: X negativo, Z positivo)
+        createCoffeeBreakArea(-5.2, 5.2);
+
+        // 4. SALA DE SERVIDORES (Sureste: X positivo, Z positivo)
+        createServerZone(5.8, 5.2);
+
+        // 5. PLANTAS DECORATIVAS Y RECEPCIÓN CENTRAL
+        createPlant(-9.0, -9.0);
+        createPlant(9.0, -9.0);
+        createPlant(-9.0, 9.0);
+        createPlant(9.0, 9.0);
+        createPlant(0.8, -1.8);
+        createPlant(-1.2, 1.8);
+      }
+
+      function addZoneRug(x, z, w, d, colorHex) {
+        const rugGeo = new THREE.PlaneGeometry(w, d);
+        const rugMat = new THREE.MeshStandardMaterial({
+          color: colorHex,
+          roughness: 0.9,
+          transparent: true,
+          opacity: 0.45,
+        });
+        const rug = new THREE.Mesh(rugGeo, rugMat);
+        rug.rotation.x = -Math.PI / 2;
+        rug.position.set(x, 0.01, z);
+        rug.receiveShadow = true;
+        scene.add(rug);
+      }
+
+      function createWorkstation(x, z, rotY) {
+        const group = new THREE.Group();
+        group.position.set(x, 0, z);
+        group.rotation.y = rotY;
+
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
+        const legMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.5 });
+        const screenMat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          emissive: 0x0284c7,
+          emissiveIntensity: 0.6,
+        });
+
+        // Tablero del escritorio
+        const top = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.08, 1.0), woodMat);
+        top.position.y = 0.75;
+        top.castShadow = true;
+        top.receiveShadow = true;
+        group.add(top);
+
+        // Patas
+        [
+          [-0.95, -0.4],
+          [0.95, -0.4],
+          [-0.95, 0.4],
+          [0.95, 0.4],
+        ].forEach(([lx, lz]) => {
+          const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.75, 0.08), legMat);
+          leg.position.set(lx, 0.375, lz);
+          leg.castShadow = true;
+          group.add(leg);
+        });
+
+        // Monitor doble
+        const monitor1 = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.4, 0.05), legMat);
+        monitor1.position.set(-0.35, 1.05, -0.25);
+        monitor1.rotation.y = 0.15;
+        group.add(monitor1);
+
+        const glow1 = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.34), screenMat);
+        glow1.position.set(-0.35, 1.05, -0.22);
+        glow1.rotation.y = 0.15;
+        group.add(glow1);
+
+        const monitor2 = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.4, 0.05), legMat);
+        monitor2.position.set(0.35, 1.05, -0.25);
+        monitor2.rotation.y = -0.15;
+        group.add(monitor2);
+
+        const glow2 = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.34), screenMat);
+        glow2.position.set(0.35, 1.05, -0.22);
+        glow2.rotation.y = -0.15;
+        group.add(glow2);
+
+        // Silla ergonómica
+        const chairSeat = new THREE.Mesh(
+          new THREE.BoxGeometry(0.55, 0.08, 0.55),
+          new THREE.MeshStandardMaterial({ color: 0x4f46e5 }),
+        );
+        chairSeat.position.set(0, 0.45, 0.65);
+        chairSeat.castShadow = true;
+        group.add(chairSeat);
+
+        const chairBack = new THREE.Mesh(
+          new THREE.BoxGeometry(0.52, 0.55, 0.08),
+          new THREE.MeshStandardMaterial({ color: 0x4338ca }),
+        );
+        chairBack.position.set(0, 0.75, 0.9);
+        chairBack.castShadow = true;
+        group.add(chairBack);
+
+        scene.add(group);
+        furnitureColliders.push({ x, z, radius: 1.05 });
+      }
+
+      function createMeetingRoom(x, z) {
+        const group = new THREE.Group();
+        group.position.set(x, 0, z);
+
+        // Mesa larga de conferencias
+        const tableTop = new THREE.Mesh(
+          new THREE.BoxGeometry(3.8, 0.1, 1.8),
+          new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4 }),
+        );
+        tableTop.position.y = 0.76;
+        tableTop.castShadow = true;
+        tableTop.receiveShadow = true;
+        group.add(tableTop);
+
+        // Pantalla de presentación en la pared Norte
+        const board = new THREE.Mesh(
+          new THREE.BoxGeometry(3.2, 1.4, 0.1),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a }),
+        );
+        board.position.set(0, 1.6, -4.8);
+        group.add(board);
+
+        const boardScreen = new THREE.Mesh(
+          new THREE.PlaneGeometry(3.0, 1.25),
+          new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x059669, emissiveIntensity: 0.45 }),
+        );
+        boardScreen.position.set(0, 1.6, -4.74);
+        group.add(boardScreen);
+
+        // 6 sillas alrededor de la mesa
+        const chairMat = new THREE.MeshStandardMaterial({ color: 0x10b981 });
+        [-1.2, 0, 1.2].forEach((cx) => {
+          [-1.25, 1.25].forEach((cz) => {
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.45, 0.5), chairMat);
+            seat.position.set(cx, 0.225, cz);
+            seat.castShadow = true;
+            group.add(seat);
+          });
+        });
+
+        scene.add(group);
+        furnitureColliders.push({ x, z, radius: 1.6 });
+      }
+
+      function createCoffeeBreakArea(x, z) {
+        const group = new THREE.Group();
+        group.position.set(x, 0, z);
+
+        // Barra de café / Cocina
+        const counter = new THREE.Mesh(
+          new THREE.BoxGeometry(3.2, 0.9, 0.9),
+          new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.7 }),
+        );
+        counter.position.set(-0.8, 0.45, 2.2);
+        counter.castShadow = true;
+        group.add(counter);
+
+        // Máquina de Espresso
+        const coffeeMachine = new THREE.Mesh(
+          new THREE.BoxGeometry(0.6, 0.55, 0.5),
+          new THREE.MeshStandardMaterial({ color: 0xdc2626, metalness: 0.5 }),
+        );
+        coffeeMachine.position.set(-1.4, 1.15, 2.2);
+        coffeeMachine.castShadow = true;
+        group.add(coffeeMachine);
+
+        // Sofá Lounge en L
+        const sofaMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 });
+        const sofa1 = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.55, 0.9), sofaMat);
+        sofa1.position.set(0.5, 0.275, -1.2);
+        sofa1.castShadow = true;
+        group.add(sofa1);
+
+        // Mesa de centro redonda
+        const roundTable = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.7, 0.7, 0.45, 20),
+          new THREE.MeshStandardMaterial({ color: 0xfef3c7 }),
+        );
+        roundTable.position.set(0.5, 0.225, 0.2);
+        roundTable.castShadow = true;
+        group.add(roundTable);
+
+        scene.add(group);
+        furnitureColliders.push({ x: x + 0.5, z: z + 0.2, radius: 0.85 });
+      }
+
+      function createServerZone(x, z) {
+        const group = new THREE.Group();
+        group.position.set(x, 0, z);
+
+        const rackMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.3 });
+        const ledMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+        const ledWarnMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+
+        for (let i = 0; i < 3; i++) {
+          const rack = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.3, 1.1), rackMat);
+          rack.position.set((i - 1) * 1.45, 1.15, 1.2);
+          rack.castShadow = true;
+          group.add(rack);
+
+          // Luces LED de servidores
+          for (let row = 0; row < 5; row++) {
+            const led = new THREE.Mesh(
+              new THREE.PlaneGeometry(0.8, 0.08),
+              row % 2 === 0 ? ledMat : ledWarnMat,
+            );
+            led.position.set((i - 1) * 1.45, 0.5 + row * 0.35, 0.64);
+            led.rotation.y = Math.PI;
+            group.add(led);
+          }
+        }
+
+        scene.add(group);
+        furnitureColliders.push({ x, z: z + 1.2, radius: 1.8 });
+      }
+
+      function createPlant(x, z) {
+        const group = new THREE.Group();
+        group.position.set(x, 0, z);
+
+        const pot = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.35, 0.25, 0.5, 12),
+          new THREE.MeshStandardMaterial({ color: 0x9a3412 }),
+        );
+        pot.position.y = 0.25;
+        pot.castShadow = true;
+        group.add(pot);
+
+        const foliage = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(0.55, 1),
+          new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.8 }),
+        );
+        foliage.position.y = 0.85;
+        foliage.castShadow = true;
+        group.add(foliage);
+
+        scene.add(group);
+      }
+
+      // ============================================================================
+      // INDICADORES DE NAVEGACIÓN (ANILLO DE SELECCIÓN Y MARCADOR DE CLIC EN EL PISO)
+      // ============================================================================
+      function buildNavigationMarkers() {
+        // Anillo brillante bajo el personaje seleccionado
+        const ringGeo = new THREE.RingGeometry(0.48, 0.64, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0x6366f1,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.9,
+        });
+        activeRingMesh = new THREE.Mesh(ringGeo, ringMat);
+        activeRingMesh.rotation.x = -Math.PI / 2;
+        activeRingMesh.position.y = 0.03;
+        scene.add(activeRingMesh);
+
+        // Marcador de destino cuando el usuario hace clic en el suelo
+        const targetGeo = new THREE.RingGeometry(0.25, 0.38, 24);
+        const targetMat = new THREE.MeshBasicMaterial({
+          color: 0x10b981,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.0,
+        });
+        targetMarkerMesh = new THREE.Mesh(targetGeo, targetMat);
+        targetMarkerMesh.rotation.x = -Math.PI / 2;
+        targetMarkerMesh.position.y = 0.04;
+        scene.add(targetMarkerMesh);
+
+        // Línea punteada entre el personaje activo y su destino
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0.05, 0),
+          new THREE.Vector3(0, 0.05, 0),
+        ]);
+        const lineMat = new THREE.LineBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.65,
+        });
+        pathLineMesh = new THREE.Line(lineGeo, lineMat);
+        scene.add(pathLineMesh);
+      }
+
+      // ============================================================================
+      // SISTEMA DE PERSONAJES (SPRITES 2D BILLBOARDS + CUERPO 2.5D + ETIQUETA HTML)
+      // ============================================================================
+      function createCharacterInstance(template, startX, startZ) {
+        const id = characters.length;
+        const group = new THREE.Group();
+        group.position.set(startX, 0, startZ);
+
+        // Generar las 6 texturas del Sprite (Idle, Walk1, Walk2 x Derecha/Izquierda)
+        const textures = {
+          right: [
+            createCharacterSpriteSheetFrame(template, 0, false),
+            createCharacterSpriteSheetFrame(template, 1, false),
+            createCharacterSpriteSheetFrame(template, 2, false),
+          ],
+          left: [
+            createCharacterSpriteSheetFrame(template, 0, true),
+            createCharacterSpriteSheetFrame(template, 1, true),
+            createCharacterSpriteSheetFrame(template, 2, true),
+          ],
+        };
+
+        // 1. Sprite 2D Billboard (Siempre mira a la cámara en 3D)
+        const spriteMat = new THREE.SpriteMaterial({
+          map: textures.right[0],
+          transparent: true,
+        });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.scale.set(1.5, 1.85, 1);
+        sprite.position.y = 0.92;
+        sprite.userData = { charId: id };
+        group.add(sprite);
+
+        // 2. Peana / Sombra 3D bajo el Sprite (Estilo ficha 2.5D)
+        const baseDisc = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.42, 0.46, 0.08, 24),
+          new THREE.MeshStandardMaterial({
+            color: template.color,
+            roughness: 0.3,
+            metalness: 0.2,
+          }),
+        );
+        baseDisc.position.y = 0.04;
+        baseDisc.castShadow = true;
+        baseDisc.receiveShadow = true;
+        baseDisc.userData = { charId: id };
+        group.add(baseDisc);
+
+        // 3. Avatar Voxel 3D opcional (Para cuando el usuario cambia el modo visual)
+        const voxelGroup = new THREE.Group();
+        const bodyMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(0.55, 0.75, 0.35),
+          new THREE.MeshStandardMaterial({ color: template.shirt }),
+        );
+        bodyMesh.position.y = 0.55;
+        bodyMesh.castShadow = true;
+        voxelGroup.add(bodyMesh);
+
+        const headMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(0.48, 0.48, 0.48),
+          new THREE.MeshStandardMaterial({ color: template.skin }),
+        );
+        headMesh.position.y = 1.2;
+        headMesh.castShadow = true;
+        voxelGroup.add(headMesh);
+        voxelGroup.visible = renderMode === "avatar3d";
+        group.add(voxelGroup);
+
+        scene.add(group);
+
+        // Crear Etiqueta Flotante HTML sobre la cabeza del personaje
+        const labelsContainer = document.getElementById("labels-container");
+        const labelEl = document.createElement("div");
+        labelEl.className =
+          "sprite-label px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700 shadow-lg flex flex-col items-center";
+        labelEl.onclick = (e) => {
+          e.stopPropagation();
+          selectCharacter(id);
+        };
+        labelsContainer.appendChild(labelEl);
+
+        const charObj = {
+          id,
+          name: template.name,
+          role: template.role,
+          color: template.color,
+          group,
+          sprite,
+          baseDisc,
+          voxelGroup,
+          textures,
+          labelEl,
+          position: group.position,
+          targetPos: new THREE.Vector3(startX, 0, startZ),
+          hasTarget: false,
+          speed: 4.2,
+          facingLeft: false,
+          animTimer: Math.random() * 10,
+          patrolCooldown: 2 + Math.random() * 3,
+          stateText: "En espera",
+        };
+
+        characters.push(charObj);
+        updateCharacterZoneState(charObj);
+        return charObj;
+      }
+
+      function spawnInitialCharacters() {
+        createCharacterInstance(CHARACTER_TEMPLATES[0], -4.5, -4.5); // Carlos en Dev
+        createCharacterInstance(CHARACTER_TEMPLATES[1], 4.2, -4.8); // Sofía en Sala Juntas
+        createCharacterInstance(CHARACTER_TEMPLATES[2], 5.5, 4.2); // Mateo en Servidores
+        createCharacterInstance(CHARACTER_TEMPLATES[3], -4.8, 4.5); // Elena en Cafetería
+
+        selectCharacter(0);
+        renderCharactersSidebarList();
+      }
+
+      function spawnNewCharacter() {
+        const template = CHARACTER_TEMPLATES[characters.length % CHARACTER_TEMPLATES.length];
+        const randomX = parseFloat(((Math.random() - 0.5) * 6).toFixed(1));
+        const randomZ = parseFloat(((Math.random() - 0.5) * 6).toFixed(1));
+        const newChar = createCharacterInstance(
+          { ...template, name: `${template.name} #${characters.length + 1}` },
+          randomX,
+          randomZ,
+        );
+        selectCharacter(newChar.id);
+        renderCharactersSidebarList();
+      }
+
+      // ============================================================================
+      // SELECCIÓN, MOVIMIENTO Y ACTUALIZACIÓN DE COORDENADAS EN TIEMPO REAL
+      // ============================================================================
+      function selectCharacter(id) {
+        activeCharId = id;
+        const c = characters[activeCharId];
+
+        // Actualizar color del anillo seleccionador 3D
+        activeRingMesh.material.color.set(c.color);
+
+        // Actualizar cabecera del inspector
+        const preview = document.getElementById("active-avatar-preview");
+        preview.style.backgroundColor = c.color;
+        preview.textContent = c.name.substring(0, 2).toUpperCase();
+
+        document.getElementById("active-char-name").textContent = `${c.name} (${c.role})`;
+
+        syncInspectorInputsWithActiveChar();
+        renderCharactersSidebarList();
+      }
+
+      function worldToGrid(x, z) {
+        const col = Math.min(19, Math.max(0, Math.floor(x + HALF_SIZE)));
+        const row = Math.min(19, Math.max(0, Math.floor(z + HALF_SIZE)));
+        return { col, row };
+      }
+
+      function detectZoneName(x, z) {
+        for (const key in OFFICE_ZONES) {
+          const zone = OFFICE_ZONES[key];
+          const dist = Math.hypot(x - zone.x, z - zone.z);
+          if (dist <= zone.radius) return zone.name;
+        }
+        return "Pasillo Oficina";
+      }
+
+      function updateCharacterZoneState(charObj) {
+        const zoneName = detectZoneName(charObj.position.x, charObj.position.z);
+        const isMoving = charObj.isMovingNow;
+        charObj.stateText = isMoving ? `Caminando → ${zoneName}` : `En ${zoneName}`;
+      }
+
+      function clampToOfficeBounds(x, z) {
+        const margin = 0.65;
+        let cx = Math.max(-HALF_SIZE + margin, Math.min(HALF_SIZE - margin, x));
+        let cz = Math.max(-HALF_SIZE + margin, Math.min(HALF_SIZE - margin, z));
+
+        // Desvío suave alrededor de muebles principales
+        for (const col of furnitureColliders) {
+          const dx = cx - col.x;
+          const dz = cz - col.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist < col.radius && dist > 0.001) {
+            cx = col.x + (dx / dist) * col.radius;
+            cz = col.z + (dz / dist) * col.radius;
+          }
+        }
+        return { x: cx, z: cz };
+      }
+
+      // Sincronizar los inputs X, Y, Z y Sliders del panel derecho con el personaje activo
+      function syncInspectorInputsWithActiveChar() {
+        const c = characters[activeCharId];
+        if (!c) return;
+
+        const xStr = c.position.x.toFixed(2);
+        const yStr = c.position.y.toFixed(2);
+        const zStr = c.position.z.toFixed(2);
+        const grid = worldToGrid(c.position.x, c.position.z);
+
+        const inputX = document.getElementById("input-pos-x");
+        const inputY = document.getElementById("input-pos-y");
+        const inputZ = document.getElementById("input-pos-z");
+
+        if (document.activeElement !== inputX) inputX.value = xStr;
+        inputY.value = yStr;
+        if (document.activeElement !== inputZ) inputZ.value = zStr;
+
+        document.getElementById("slider-pos-x").value = c.position.x;
+        document.getElementById("slider-pos-z").value = c.position.z;
+        document.getElementById("slider-x-val").textContent = xStr;
+        document.getElementById("slider-z-val").textContent = zStr;
+
+        document.getElementById("active-char-grid").textContent = `Col ${grid.col}, Fila ${grid.row}`;
+        document.getElementById("active-char-state").innerHTML = `
+                <span class="w-1.5 h-1.5 rounded-full ${c.isMovingNow ? "bg-amber-400 animate-ping" : "bg-emerald-400"}"></span>
+                <span>${c.stateText}</span>
+            `;
+      }
+
+      // Edición manual de coordenadas desde los campos numéricos X, Z
+      function manualCoordInput() {
+        const c = characters[activeCharId];
+        if (!c) return;
+        const nx = parseFloat(document.getElementById("input-pos-x").value) || 0;
+        const nz = parseFloat(document.getElementById("input-pos-z").value) || 0;
+        const clamped = clampToOfficeBounds(nx, nz);
+
+        c.position.x = clamped.x;
+        c.position.z = clamped.z;
+        c.hasTarget = false;
+        updateCharacterZoneState(c);
+        syncInspectorInputsWithActiveChar();
+      }
+
+      // Edición en vivo arrastrando los sliders X o Z
+      function sliderCoordInput() {
+        const c = characters[activeCharId];
+        if (!c) return;
+        const nx = parseFloat(document.getElementById("slider-pos-x").value);
+        const nz = parseFloat(document.getElementById("slider-pos-z").value);
+        c.position.x = nx;
+        c.position.z = nz;
+        c.hasTarget = false;
+        updateCharacterZoneState(c);
+        syncInspectorInputsWithActiveChar();
+      }
+
+      // Enviar al personaje activo caminando a una zona de la oficina
+      function sendActiveToZone(zoneKey) {
+        const zone = OFFICE_ZONES[zoneKey];
+        const c = characters[activeCharId];
+        if (!zone || !c) return;
+
+        const offsetX = (Math.random() - 0.5) * 1.4;
+        const offsetZ = (Math.random() - 0.5) * 1.4;
+        const dest = clampToOfficeBounds(zone.x + offsetX, zone.z + offsetZ);
+
+        c.targetPos.set(dest.x, 0, dest.z);
+        c.hasTarget = true;
+
+        // Mostrar marcador en el suelo
+        targetMarkerMesh.position.set(dest.x, 0.04, dest.z);
+        targetMarkerMesh.material.opacity = 0.95;
+      }
+
+      // Renderizar tarjetas de todos los personajes en el panel derecho
+      function renderCharactersSidebarList() {
+        const listEl = document.getElementById("characters-list");
+        document.getElementById("char-count").textContent = characters.length;
+
+        listEl.innerHTML = characters
+          .map((c) => {
+            const isSelected = c.id === activeCharId;
+            const grid = worldToGrid(c.position.x, c.position.z);
+            return `
+                    <div onclick="selectCharacter(${c.id})" class="p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between ${
+                      isSelected
+                        ? "bg-indigo-950/60 border-indigo-500/70 shadow-md"
+                        : "bg-slate-900/60 border-slate-800/80 hover:border-slate-700"
+                    }">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white shadow" style="background:${c.color}">
+                                ${c.name.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-xs font-bold text-white">${c.name}</span>
+                                    <span class="text-[10px] text-slate-400">${c.role}</span>
+                                </div>
+                                <span id="sidebar-state-${c.id}" class="text-[10px] text-slate-400 block">${c.stateText}</span>
+                            </div>
+                        </div>
+                        <div class="text-right mono">
+                            <span id="sidebar-xyz-${c.id}" class="text-[11px] font-semibold text-indigo-300 block">
+                                (${c.position.x.toFixed(1)}, ${c.position.z.toFixed(1)})
+                            </span>
+                            <span id="sidebar-grid-${c.id}" class="text-[10px] text-slate-500 block">
+                                [${grid.col}, ${grid.row}]
+                            </span>
+                        </div>
+                    </div>
+                `;
+          })
+          .join("");
+      }
+
+      // ============================================================================
+      // BUCLE PRINCIPAL DE ANIMACIÓN Y FÍSICA DE MOVIMIENTO 2.5D
+      // ============================================================================
+      function updateCharacters(dt) {
+        // Vector de dirección por teclado / D-Pad para el personaje activo
+        let moveX = 0;
+        let moveZ = 0;
+        if (keysPressed.w || keysPressed.up || touchKeys.up) moveZ -= 1;
+        if (keysPressed.s || keysPressed.down || touchKeys.down) moveZ += 1;
+        if (keysPressed.a || keysPressed.left || touchKeys.left) moveX -= 1;
+        if (keysPressed.d || keysPressed.right || touchKeys.right) moveX += 1;
+
+        const isManualInput = moveX !== 0 || moveZ !== 0;
+
+        characters.forEach((c) => {
+          const isSelected = c.id === activeCharId;
+          let vx = 0;
+          let vz = 0;
+
+          if (isSelected && isManualInput) {
+            // Movimiento directo por teclado o botones direccionales
+            c.hasTarget = false;
+            targetMarkerMesh.material.opacity = 0;
+
+            // Ajustar dirección relativa al ángulo horizontal de la cámara en modo Isométrico
+            const len = Math.hypot(moveX, moveZ);
+            const normX = moveX / len;
+            const normZ = moveZ / len;
+
+            if (cameraMode === "top") {
+              vx = normX * c.speed;
+              vz = normZ * c.speed;
+            } else {
+              // Alinear con la vista de la cámara para controles intuitivos
+              const forward = new THREE.Vector3(
+                Math.sin(camSpherical.theta),
+                0,
+                Math.cos(camSpherical.theta),
+              ).normalize();
+              const right = new THREE.Vector3(forward.z, 0, -forward.x);
+              vx = (right.x * -normX + forward.x * normZ) * c.speed;
+              vz = (right.z * -normX + forward.z * normZ) * c.speed;
+            }
+          } else if (c.hasTarget) {
+            // Movimiento automático hacia el punto clicado o zona asignada
+            const dx = c.targetPos.x - c.position.x;
+            const dz = c.targetPos.z - c.position.z;
+            const dist = Math.hypot(dx, dz);
+
+            if (dist > 0.12) {
+              vx = (dx / dist) * c.speed;
+              vz = (dz / dist) * c.speed;
+            } else {
+              c.position.x = c.targetPos.x;
+              c.position.z = c.targetPos.z;
+              c.hasTarget = false;
+              if (isSelected) targetMarkerMesh.material.opacity = 0;
+            }
+          } else if (!isSelected && globalPatrolEnabled) {
+            // Modo Patrulla IA para que los demás personajes caminen entre áreas de la oficina
+            c.patrolCooldown -= dt;
+            if (c.patrolCooldown <= 0) {
+              const zoneKeys = Object.keys(OFFICE_ZONES);
+              const randomZone = OFFICE_ZONES[zoneKeys[Math.floor(Math.random() * zoneKeys.length)]];
+              const tx = randomZone.x + (Math.random() - 0.5) * 2.6;
+              const tz = randomZone.z + (Math.random() - 0.5) * 2.6;
+              const clamped = clampToOfficeBounds(tx, tz);
+              c.targetPos.set(clamped.x, 0, clamped.z);
+              c.hasTarget = true;
+              c.patrolCooldown = 4 + Math.random() * 5;
+            }
+          }
+
+          const speedMag = Math.hypot(vx, vz);
+          c.isMovingNow = speedMag > 0.05;
+
+          if (c.isMovingNow) {
+            const nextPos = clampToOfficeBounds(c.position.x + vx * dt, c.position.z + vz * dt);
+            c.position.x = nextPos.x;
+            c.position.z = nextPos.z;
+
+            // Determinar si el sprite mira a la izquierda o derecha
+            if (Math.abs(vx) > 0.05) {
+              c.facingLeft = vx < 0;
+            }
+
+            // Animación de frames de caminata + pequeño salto vertical 2.5D (bobbing)
+            c.animTimer += dt * 9;
+            const frameIdx = (Math.floor(c.animTimer) % 2) + 1; // Alterna entre frame 1 y 2
+            const dirKey = c.facingLeft ? "left" : "right";
+            c.sprite.material.map = c.textures[dirKey][frameIdx];
+            c.position.y = Math.abs(Math.sin(c.animTimer * 1.5)) * 0.14;
+          } else {
+            // Estado reposo (Idle) con respiración suave
+            c.animTimer += dt * 2;
+            const dirKey = c.facingLeft ? "left" : "right";
+            c.sprite.material.map = c.textures[dirKey][0];
+            c.position.y = 0;
+          }
+
+          updateCharacterZoneState(c);
+
+          // Actualizar textos de la lista lateral sin reconstruir el DOM completo
+          const xyzEl = document.getElementById(`sidebar-xyz-${c.id}`);
+          const gridEl = document.getElementById(`sidebar-grid-${c.id}`);
+          const stateEl = document.getElementById(`sidebar-state-${c.id}`);
+          if (xyzEl && gridEl && stateEl) {
+            const g = worldToGrid(c.position.x, c.position.z);
+            xyzEl.textContent = `(${c.position.x.toFixed(1)}, ${c.position.z.toFixed(1)})`;
+            gridEl.textContent = `[${g.col}, ${g.row}]`;
+            stateEl.textContent = c.stateText;
+          }
+        });
+
+        // Actualizar anillo seleccionador y línea de ruta del personaje activo
+        const activeChar = characters[activeCharId];
+        if (activeChar) {
+          activeRingMesh.position.x = activeChar.position.x;
+          activeRingMesh.position.z = activeChar.position.z;
+          activeRingMesh.rotation.z += dt * 1.5;
+
+          if (activeChar.hasTarget) {
+            const positions = pathLineMesh.geometry.attributes.position.array;
+            positions[0] = activeChar.position.x;
+            positions[1] = 0.06;
+            positions[2] = activeChar.position.z;
+            positions[3] = activeChar.targetPos.x;
+            positions[4] = 0.06;
+            positions[5] = activeChar.targetPos.z;
+            pathLineMesh.geometry.attributes.position.needsUpdate = true;
+            pathLineMesh.visible = true;
+          } else {
+            pathLineMesh.visible = false;
+          }
+
+          syncInspectorInputsWithActiveChar();
+        }
+
+        // Actualizar proyección 3D -> 2D de las etiquetas flotantes sobre cada Sprite
+        updateFloatingLabels();
+      }
+
+      function updateFloatingLabels() {
+        const halfW = window.innerWidth / 2;
+        const halfH = window.innerHeight / 2;
+
+        characters.forEach((c) => {
+          const headWorldPos = new THREE.Vector3(c.position.x, c.position.y + 2.05, c.position.z);
+          headWorldPos.project(camera);
+
+          if (headWorldPos.z > 1) {
+            c.labelEl.style.display = "none";
+            return;
+          }
+
+          const screenX = headWorldPos.x * halfW + halfW;
+          const screenY = -(headWorldPos.y * halfH) + halfH;
+
+          c.labelEl.style.display = "flex";
+          c.labelEl.style.left = `${screenX}px`;
+          c.labelEl.style.top = `${screenY}px`;
+
+          const isSelected = c.id === activeCharId;
+          const grid = worldToGrid(c.position.x, c.position.z);
+
+          c.labelEl.className = `sprite-label px-2.5 py-1 rounded-xl backdrop-blur-md transition flex flex-col items-center ${
+            isSelected
+              ? "active-char bg-indigo-950/95 border-2 border-indigo-400 shadow-xl shadow-indigo-500/20"
+              : "bg-slate-900/85 border border-slate-700/80 opacity-90 hover:opacity-100"
+          }`;
+
+          c.labelEl.innerHTML = `
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full" style="background:${c.color}"></span>
+                        <span class="text-[11px] font-bold text-white">${c.name}</span>
+                        ${isSelected ? '<span class="text-[9px] bg-indigo-500 text-white px-1 rounded font-bold">TÚ</span>' : ""}
+                    </div>
+                    <div class="mono text-[10px] font-semibold ${isSelected ? "text-indigo-200" : "text-slate-300"}">
+                        X:${c.position.x.toFixed(1)} Y:${c.position.y.toFixed(1)} Z:${c.position.z.toFixed(1)} <span class="text-amber-300">[${grid.col},${grid.row}]</span>
+                    </div>
+                `;
+        });
+      }
+
+      // ============================================================================
+      // MINI-MAPA RADAR 2D INTERACTIVO (PARTE INFERIOR DEL INSPECTOR)
+      // ============================================================================
+      function drawMinimap() {
+        const canvas = document.getElementById("minimap-canvas");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const w = canvas.width;
+        const h = canvas.height;
+
+        ctx.fillStyle = "#090d16";
+        ctx.fillRect(0, 0, w, h);
+
+        // Cuadrícula 20x20
+        const step = w / 20;
+        ctx.strokeStyle = "rgba(51, 65, 85, 0.35)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 20; i++) {
+          ctx.beginPath();
+          ctx.moveTo(i * step, 0);
+          ctx.lineTo(i * step, h);
+          ctx.moveTo(0, i * step);
+          ctx.lineTo(w, i * step);
+          ctx.stroke();
+        }
+
+        // Dibujar Zonas de la oficina
+        const mapCoord = (val) => ((val + HALF_SIZE) / OFFICE_SIZE) * w;
+
+        for (const key in OFFICE_ZONES) {
+          const z = OFFICE_ZONES[key];
+          const zx = mapCoord(z.x);
+          const zz = mapCoord(z.z);
+          ctx.fillStyle = z.color + "28";
+          ctx.strokeStyle = z.color + "88";
+          ctx.beginPath();
+          ctx.arc(zx, zz, (z.radius / OFFICE_SIZE) * w, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = "#cbd5e1";
+          ctx.font = "600 9px Inter";
+          ctx.textAlign = "center";
+          ctx.fillText(z.name, zx, zz + 3);
+        }
+
+        // Dibujar cada personaje y su vector de destino
+        characters.forEach((c) => {
+          const cx = mapCoord(c.position.x);
+          const cz = mapCoord(c.position.z);
+
+          if (c.hasTarget) {
+            const tx = mapCoord(c.targetPos.x);
+            const tz = mapCoord(c.targetPos.z);
+            ctx.strokeStyle = c.color;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(cx, cz);
+            ctx.lineTo(tx, tz);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          // Punto del personaje
+          ctx.fillStyle = c.color;
+          ctx.beginPath();
+          ctx.arc(cx, cz, c.id === activeCharId ? 6.5 : 4.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (c.id === activeCharId) {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+        });
+      }
+
+      // ============================================================================
+      // CÁMARA Y MODOS DE VISUALIZACIÓN (ISOMÉTRICA, SUPERIOR 2D, SEGUIR SPRITE)
+      // ============================================================================
+      function updateCameraTransform() {
+        if (cameraMode === "follow" && characters[activeCharId]) {
+          const c = characters[activeCharId];
+          camTarget.lerp(new THREE.Vector3(c.position.x, 0.5, c.position.z), 0.1);
+        } else if (cameraMode === "top") {
+          camSpherical.phi = 0.05; // Vista cenital 2D
+        }
+
+        const sinPhi = Math.sin(camSpherical.phi);
+        camera.position.x = camTarget.x + camSpherical.radius * sinPhi * Math.sin(camSpherical.theta);
+        camera.position.y = camTarget.y + camSpherical.radius * Math.cos(camSpherical.phi);
+        camera.position.z = camTarget.z + camSpherical.radius * sinPhi * Math.cos(camSpherical.theta);
+        camera.lookAt(camTarget);
+      }
+
+      function setCameraMode(mode) {
+        cameraMode = mode;
+        if (mode === "iso") {
+          camSpherical.phi = Math.PI / 3.2;
+          camSpherical.theta = Math.PI / 4;
+          camSpherical.radius = 22;
+          camTarget.set(0, 0, 0);
+        } else if (mode === "top") {
+          camSpherical.phi = 0.02;
+          camSpherical.theta = 0;
+          camSpherical.radius = 24;
+          camTarget.set(0, 0, 0);
+        } else if (mode === "follow") {
+          camSpherical.phi = Math.PI / 3.4;
+          camSpherical.radius = 14;
+        }
+
+        // Actualizar estilos de botones
+        ["iso", "top", "follow"].forEach((m) => {
+          const btn = document.getElementById(`cam-${m}`);
+          if (m === mode) {
+            btn.className =
+              "px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 bg-indigo-600 text-white shadow transition";
+          } else {
+            btn.className =
+              "px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/80 transition";
+          }
+        });
+      }
+
+      function centerOnActiveCharacter() {
+        const c = characters[activeCharId];
+        if (!c) return;
+        camTarget.set(c.position.x, 0, c.position.z);
+      }
+
+      function toggleGlobalPatrol() {
+        globalPatrolEnabled = !globalPatrolEnabled;
+        const btn = document.getElementById("btn-patrol-all");
+        const text = document.getElementById("patrol-status-text");
+        if (globalPatrolEnabled) {
+          text.textContent = "IA Patrulla: ON";
+          btn.className =
+            "px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition";
+        } else {
+          text.textContent = "IA Patrulla: OFF";
+          btn.className =
+            "px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 transition";
+          characters.forEach((c, idx) => {
+            if (idx !== activeCharId) c.hasTarget = false;
+          });
+        }
+      }
+
+      function toggleSpriteRenderMode() {
+        const modes = ["hybrid", "sprite", "avatar3d"];
+        const labels = {
+          hybrid: "Modo: 2.5D Mixto",
+          sprite: "Modo: Sprite 2D Puro",
+          avatar3d: "Modo: Avatar 3D + 2D",
+        };
+        const nextIndex = (modes.indexOf(renderMode) + 1) % modes.length;
+        renderMode = modes[nextIndex];
+        document.getElementById("render-mode-text").textContent = labels[renderMode];
+
+        characters.forEach((c) => {
+          c.baseDisc.visible = renderMode !== "sprite";
+          c.voxelGroup.visible = renderMode === "avatar3d";
+        });
+      }
+
+      function setTouchKey(dir, state) {
+        touchKeys[dir] = state;
+      }
+
+      // ============================================================================
+      // EVENTOS DE ENTRADA (TECLADO, RAYCASTING AL PISO, ORBITA DE CÁMARA Y MINIMAPA)
+      // ============================================================================
+      function setupEventListeners() {
+        const domEl = renderer.domElement;
+
+        // Teclado WASD y Flechas
+        window.addEventListener("keydown", (e) => {
+          if (document.activeElement.tagName === "INPUT") return;
+          const k = e.key.toLowerCase();
+          if (k === "w") keysPressed.w = true;
+          if (k === "a") keysPressed.a = true;
+          if (k === "s") keysPressed.s = true;
+          if (k === "d") keysPressed.d = true;
+          if (e.key === "ArrowUp") {
+            keysPressed.up = true;
+            e.preventDefault();
+          }
+          if (e.key === "ArrowLeft") {
+            keysPressed.left = true;
+            e.preventDefault();
+          }
+          if (e.key === "ArrowDown") {
+            keysPressed.down = true;
+            e.preventDefault();
+          }
+          if (e.key === "ArrowRight") {
+            keysPressed.right = true;
+            e.preventDefault();
+          }
+        });
+
+        window.addEventListener("keyup", (e) => {
+          const k = e.key.toLowerCase();
+          if (k === "w") keysPressed.w = false;
+          if (k === "a") keysPressed.a = false;
+          if (k === "s") keysPressed.s = false;
+          if (k === "d") keysPressed.d = false;
+          if (e.key === "ArrowUp") keysPressed.up = false;
+          if (e.key === "ArrowLeft") keysPressed.left = false;
+          if (e.key === "ArrowDown") keysPressed.down = false;
+          if (e.key === "ArrowRight") keysPressed.right = false;
+        });
+
+        // Ratón en el Canvas 3D
+        domEl.addEventListener("mousedown", (e) => {
+          pointerDownPos = { x: e.clientX, y: e.clientY };
+          prevPointerPos = { x: e.clientX, y: e.clientY };
+          if (e.button === 2 || e.shiftKey) {
+            isPanningCamera = true;
+          } else if (e.button === 0) {
+            isDraggingCamera = true;
+          }
+        });
+
+        window.addEventListener("mousemove", (e) => {
+          // Actualizar raycast sobre el suelo para mostrar coordenadas del cursor
+          mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+          mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+          raycaster.setFromCamera(mouse, camera);
+          const floorHits = raycaster.intersectObject(floorMesh);
+          if (floorHits.length > 0) {
+            hoveredFloorPoint.copy(floorHits[0].point);
+            const g = worldToGrid(hoveredFloorPoint.x, hoveredFloorPoint.z);
+            document.getElementById("hover-xyz").textContent =
+              `X: ${hoveredFloorPoint.x.toFixed(2)} | Z: ${hoveredFloorPoint.z.toFixed(2)}`;
+            document.getElementById("hover-grid").textContent = `[C:${g.col}, F:${g.row}]`;
+            document.getElementById("hover-zone-badge").textContent = detectZoneName(
+              hoveredFloorPoint.x,
+              hoveredFloorPoint.z,
+            );
+          }
+
+          if (!isDraggingCamera && !isPanningCamera) return;
+
+          const dx = e.clientX - prevPointerPos.x;
+          const dy = e.clientY - prevPointerPos.y;
+          prevPointerPos = { x: e.clientX, y: e.clientY };
+
+          if (isDraggingCamera && cameraMode !== "top") {
+            camSpherical.theta -= dx * 0.007;
+            camSpherical.phi = Math.max(0.25, Math.min(Math.PI / 2.2, camSpherical.phi - dy * 0.006));
+          } else if (isPanningCamera || (isDraggingCamera && cameraMode === "top")) {
+            const panSpeed = 0.025;
+            camTarget.x -= dx * panSpeed;
+            camTarget.z -= dy * panSpeed;
+          }
+        });
+
+        window.addEventListener("mouseup", (e) => {
+          const moveDist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+          isDraggingCamera = false;
+          isPanningCamera = false;
+
+          // Si fue un clic limpio (sin arrastrar la cámara), verificamos si clicó un Sprite o el Piso
+          if (moveDist < 6 && e.target === domEl && e.button === 0) {
+            handleSceneClick(e);
+          }
+        });
+
+        domEl.addEventListener("contextmenu", (e) => e.preventDefault());
+
+        // Zoom con la rueda del ratón
+        domEl.addEventListener(
+          "wheel",
+          (e) => {
+            e.preventDefault();
+            camSpherical.radius = Math.max(8, Math.min(38, camSpherical.radius + e.deltaY * 0.015));
+          },
+          { passive: false },
+        );
+
+        // Clic en el Mini-mapa 2D para mover el personaje activo directamente
+        const minimapCanvas = document.getElementById("minimap-canvas");
+        minimapCanvas.addEventListener("click", (e) => {
+          const rect = minimapCanvas.getBoundingClientRect();
+          const normX = (e.clientX - rect.left) / rect.width;
+          const normZ = (e.clientY - rect.top) / rect.height;
+          const worldX = normX * OFFICE_SIZE - HALF_SIZE;
+          const worldZ = normZ * OFFICE_SIZE - HALF_SIZE;
+
+          const dest = clampToOfficeBounds(worldX, worldZ);
+          const c = characters[activeCharId];
+          if (c) {
+            c.targetPos.set(dest.x, 0, dest.z);
+            c.hasTarget = true;
+            targetMarkerMesh.position.set(dest.x, 0.04, dest.z);
+            targetMarkerMesh.material.opacity = 0.95;
+          }
+        });
+
+        // Redimensionar ventana
+        window.addEventListener("resize", () => {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+      }
+
+      function handleSceneClick(e) {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+
+        // 1. Verificar si clicó sobre algún personaje Sprite
+        const spriteObjects = characters.map((c) => c.sprite);
+        const spriteHits = raycaster.intersectObjects(spriteObjects);
+        if (spriteHits.length > 0) {
+          const hitCharId = spriteHits[0].object.userData.charId;
+          if (hitCharId !== undefined) {
+            selectCharacter(hitCharId);
+            return;
+          }
+        }
+
+        // 2. Si clicó en el piso, mover el personaje activo hacia esa coordenada
+        const floorHits = raycaster.intersectObject(floorMesh);
+        if (floorHits.length > 0) {
+          const pt = floorHits[0].point;
+          const clamped = clampToOfficeBounds(pt.x, pt.z);
+          const c = characters[activeCharId];
+          if (c) {
+            c.targetPos.set(clamped.x, 0, clamped.z);
+            c.hasTarget = true;
+
+            targetMarkerMesh.position.set(clamped.x, 0.04, clamped.z);
+            targetMarkerMesh.material.opacity = 0.95;
+          }
+        }
+      }
+
+      // ============================================================================
+      // CICLO DE ANIMACIÓN PRINCIPAL
+      // ============================================================================
+      function animate() {
+        requestAnimationFrame(animate);
+
+        const dt = Math.min(clock.getDelta(), 0.1);
+        updateCharacters(dt);
+        updateCameraTransform();
+        drawMinimap();
+
+        // Animación sutil del marcador de destino en el suelo
+        if (targetMarkerMesh && targetMarkerMesh.material.opacity > 0) {
+          const s = 1 + Math.sin(clock.elapsedTime * 6) * 0.15;
+          targetMarkerMesh.scale.set(s, s, 1);
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      window.onload = function () {
+        initThreeJS();
+        animate();
+      };
+    </script>
+  </body>
+</html>
