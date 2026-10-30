@@ -7,6 +7,7 @@ import { PgMcpServerStore, type McpServerStore } from "./tools/store";
 import { PgKnowledgeStore, type KnowledgeStore } from "./memory/store";
 import { PgWorkspaceStore, type WorkspaceStore } from "./workspaces/store";
 import { PgOfficeStore, type OfficeStore } from "./offices/store";
+import { PgAuthStore, type AuthStore } from "./auth/store";
 import { loadEnv } from "./env";
 
 // Load the root .env when present (Node 22+) / Carga el .env raíz si existe.
@@ -29,6 +30,7 @@ let mcpStore: McpServerStore | undefined;
 let knowledgeStore: KnowledgeStore | undefined;
 let workspaceStore: WorkspaceStore | undefined;
 let officeStore: OfficeStore | undefined;
+let authStore: AuthStore | undefined;
 let closeDb: (() => Promise<void>) | undefined;
 let dbPing: (() => Promise<unknown>) | undefined;
 if (env.DATABASE_URL) {
@@ -42,6 +44,7 @@ if (env.DATABASE_URL) {
   knowledgeStore = new PgKnowledgeStore(db, schema);
   workspaceStore = new PgWorkspaceStore(db, schema);
   officeStore = new PgOfficeStore(db, schema);
+  authStore = new PgAuthStore(db, schema);
   closeDb = close;
   const { sql } = await import("drizzle-orm");
   dbPing = () => db.execute(sql`select 1`);
@@ -54,7 +57,18 @@ if (env.DATABASE_URL) {
 const app = await buildApp(
   env,
   {},
-  { store, runStore, roleStore, scheduleStore, mcpStore, knowledgeStore, workspaceStore, officeStore, dbPing },
+  {
+    store,
+    runStore,
+    roleStore,
+    scheduleStore,
+    mcpStore,
+    knowledgeStore,
+    workspaceStore,
+    officeStore,
+    authStore,
+    dbPing,
+  },
 );
 app.addHook("onClose", async () => {
   await closeDb?.();

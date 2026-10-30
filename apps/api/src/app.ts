@@ -1,4 +1,4 @@
-import Fastify, { type FastifyServerOptions } from "fastify";
+import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { PROVIDERS } from "@infuture/providers";
@@ -25,7 +25,10 @@ import { workspaceRoutes } from "./routes/workspaces";
 import { MemoryOfficeStore, type OfficeStore } from "./offices/store";
 import { officeRoutes } from "./routes/offices";
 import { metricsRoutes } from "./routes/metrics";
+import { authRoutes } from "./routes/auth";
+import { MemoryAuthStore, type AuthStore } from "./auth/store";
 import { MetricsCollector } from "./system/metrics";
+import { WorkerStatusTracker } from "./system/workerStatus";
 import { LOCAL_WORKSPACE_ID } from "./connections/store";
 
 export const VERSION = "0.1.0";
@@ -41,6 +44,8 @@ export type AppDeps = {
   workspaceStore?: WorkspaceStore;
   /** Virtual offices (in memory only for now). */
   officeStore?: OfficeStore;
+  /** Users and login sessions (in memory unless the server passes the PostgreSQL one). */
+  authStore?: AuthStore;
   hub?: RealtimeHub;
   /** Trivial DB query for health/latency in /api/v1/system/metrics (only when a DB is configured). */
   dbPing?: () => Promise<unknown>;
@@ -75,7 +80,7 @@ export async function buildApp(env: Env, options: FastifyServerOptions = {}, dep
     });
   });
 
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error.validation) {
       return reply.code(400).send({
         error: { code: "validation", message: request.t("errors.validation", { details: error.message }) },
@@ -89,6 +94,16 @@ export async function buildApp(env: Env, options: FastifyServerOptions = {}, dep
         message: status >= 500 ? request.t("errors.internal") : error.message,
       },
     });
+  });
+
+  // Auth hook first: every /api/ route except the public ones needs a session or API_TOKEN.
+  await app.register(authRoutes, {
+    authStore: deps.authStore ?? new MemoryAuthStore(),
+    apiToken: env.API_TOKEN,
+    signupOpen: env.AUTH_SIGNUP_OPEN,
+    allowedOrigins: env.WEB_ORIGIN.split(",").map((origin) => origin.trim()),
+    sessionTtlHours: env.AUTH_SESSION_TTL_HOURS,
+    cookieSecure: env.AUTH_COOKIE_SECURE ?? env.NODE_ENV === "production",
   });
 
   await app.register(systemRoutes, { version: VERSION, startedAt: Date.now() });
@@ -144,7 +159,9 @@ export async function buildApp(env: Env, options: FastifyServerOptions = {}, dep
     emit,
   });
 
+  const workerStatus = new WorkerStatusTracker();
   await app.register(runRoutes, {
+    workerStatus,
     runStore,
     connectionStore: store,
     roleStore,
@@ -175,6 +192,7 @@ export async function buildApp(env: Env, options: FastifyServerOptions = {}, dep
   const activeStatuses = new Set(["queued", "running", "waiting_approval"]);
   const collector = new MetricsCollector({
     dbPing: deps.dbPing,
+    worker: () => workerStatus.snapshot(),
     activeRuns: async () =>
       (await runStore.listRuns(LOCAL_WORKSPACE_ID)).filter((r) => activeStatuses.has(r.status)).length,
   });

@@ -28,11 +28,31 @@ export type OfficeRecord = {
   theme: string;
   zones: OfficeZoneKey[];
   characters: OfficeCharacter[];
+  /** Per-zone capacity overrides (people per zone); zones not listed use the UI default. */
+  zoneCapacity: ZoneCapacity;
   isDefault: boolean;
   createdAt: Date;
 };
 
-export type OfficeInput = Omit<OfficeRecord, "id" | "workspaceId" | "createdAt" | "isDefault">;
+export type ZoneCapacity = Partial<Record<OfficeZoneKey, number>>;
+
+export type OfficeInput = Omit<
+  OfficeRecord,
+  "id" | "workspaceId" | "createdAt" | "isDefault" | "zoneCapacity"
+> & {
+  zoneCapacity?: ZoneCapacity;
+};
+
+/** Keeps only known zones with positive integer capacities. */
+export function cleanZoneCapacity(raw: unknown): ZoneCapacity {
+  const out: ZoneCapacity = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const k of OFFICE_ZONE_KEYS) {
+    const v = (raw as Record<string, unknown>)[k];
+    if (typeof v === "number" && Number.isInteger(v) && v > 0) out[k] = v;
+  }
+  return out;
+}
 
 export interface OfficeStore {
   listOffices(workspaceId: string): Promise<OfficeRecord[]>;
@@ -99,6 +119,7 @@ export class MemoryOfficeStore implements OfficeStore {
       theme: "#6366f1",
       zones: [...OFFICE_ZONE_KEYS],
       characters: DEFAULT_OFFICE_CHARACTERS.map((c) => ({ ...c })),
+      zoneCapacity: {},
       isDefault: true,
       createdAt: new Date(0),
     });
@@ -120,6 +141,7 @@ export class MemoryOfficeStore implements OfficeStore {
   async createOffice(workspaceId: string, input: OfficeInput) {
     const record: OfficeRecord = {
       ...input,
+      zoneCapacity: cleanZoneCapacity(input.zoneCapacity),
       id: `office-${randomUUID()}`,
       workspaceId,
       isDefault: false,
@@ -133,7 +155,8 @@ export class MemoryOfficeStore implements OfficeStore {
     const current = await this.getOffice(workspaceId, id);
     if (!current) return undefined;
     const defined = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
-    const updated: OfficeRecord = { ...current, ...defined };
+    const updated: OfficeRecord = { ...current, ...defined } as OfficeRecord;
+    if (updates.zoneCapacity !== undefined) updated.zoneCapacity = cleanZoneCapacity(updates.zoneCapacity);
     this.offices.set(id, updated);
     return updated;
   }
@@ -156,6 +179,7 @@ const toRecord = (r: OfficeRow): OfficeRecord => ({
   theme: r.theme,
   zones: r.zones.filter((z): z is OfficeZoneKey => (OFFICE_ZONE_KEYS as readonly string[]).includes(z)),
   characters: Array.isArray(r.characters) ? (r.characters as OfficeCharacter[]) : [],
+  zoneCapacity: cleanZoneCapacity(r.zoneCapacity),
   isDefault: r.isDefault,
   createdAt: r.createdAt,
 });
@@ -221,6 +245,7 @@ export class PgOfficeStore implements OfficeStore {
         theme: input.theme,
         zones: input.zones,
         characters: input.characters,
+        zoneCapacity: cleanZoneCapacity(input.zoneCapacity),
         isDefault: false,
       })
       .returning();
@@ -236,6 +261,7 @@ export class PgOfficeStore implements OfficeStore {
     if (updates.theme !== undefined) set.theme = updates.theme;
     if (updates.zones !== undefined) set.zones = updates.zones;
     if (updates.characters !== undefined) set.characters = updates.characters;
+    if (updates.zoneCapacity !== undefined) set.zoneCapacity = cleanZoneCapacity(updates.zoneCapacity);
     if (Object.keys(set).length === 0) return current;
     const { offices } = this.s;
     const [row] = await this.db

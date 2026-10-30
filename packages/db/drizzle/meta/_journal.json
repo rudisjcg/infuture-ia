@@ -15,6 +15,20 @@
       "when": 1792593590298,
       "tag": "0001_offices",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792593590299,
+      "tag": "0002_run_attribution_zone_capacity",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792593590300,
+      "tag": "0003_auth",
+      "breakpoints": true
     }
   ]
 }

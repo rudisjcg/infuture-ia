@@ -16,7 +16,13 @@ export type RunRecord = {
   tokensIn: number;
   tokensOut: number;
   costUsd: number;
+  /** Optional attribution: which office / zone / character (agent) the run was assigned to. */
+  officeId: string | null;
+  zone: string | null;
+  characterId: string | null;
 };
+
+export type RunAttribution = { officeId?: string | null; zone?: string | null; characterId?: string | null };
 
 export type TaskRecord = {
   id: string;
@@ -43,7 +49,9 @@ export type ApprovalRecord = {
 };
 
 export interface RunStore {
-  createRun(input: { id: string; workspaceId: string; goal: string; locale: string }): Promise<RunRecord>;
+  createRun(
+    input: { id: string; workspaceId: string; goal: string; locale: string } & RunAttribution,
+  ): Promise<RunRecord>;
   getRun(workspaceId: string, runId: string): Promise<RunRecord | undefined>;
   listRuns(workspaceId: string): Promise<RunRecord[]>;
   updateRun(
@@ -89,14 +97,22 @@ export class MemoryRunStore implements RunStore {
   private approvals = new Map<string, ApprovalRecord>();
   private events: CCEvent[] = [];
 
-  async createRun(input: {
-    id: string;
-    workspaceId: string;
-    goal: string;
-    locale: string;
-  }): Promise<RunRecord> {
+  async createRun(
+    input: {
+      id: string;
+      workspaceId: string;
+      goal: string;
+      locale: string;
+    } & RunAttribution,
+  ): Promise<RunRecord> {
     const record: RunRecord = {
-      ...input,
+      id: input.id,
+      workspaceId: input.workspaceId,
+      goal: input.goal,
+      locale: input.locale,
+      officeId: input.officeId ?? null,
+      zone: input.zone ?? null,
+      characterId: input.characterId ?? null,
       status: "running",
       startedAt: new Date(),
       endedAt: null,
@@ -252,12 +268,14 @@ export class PgRunStore implements RunStore {
     private s: Schema,
   ) {}
 
-  async createRun(input: {
-    id: string;
-    workspaceId: string;
-    goal: string;
-    locale: string;
-  }): Promise<RunRecord> {
+  async createRun(
+    input: {
+      id: string;
+      workspaceId: string;
+      goal: string;
+      locale: string;
+    } & RunAttribution,
+  ): Promise<RunRecord> {
     const { runs } = this.s;
     const now = new Date();
     await this.db.insert(runs).values({
@@ -265,6 +283,9 @@ export class PgRunStore implements RunStore {
       workspaceId: input.workspaceId,
       goal: input.goal,
       locale: input.locale,
+      officeId: input.officeId ?? null,
+      zone: input.zone ?? null,
+      characterId: input.characterId ?? null,
       status: "running",
       startedAt: now,
       tokensIn: 0,
@@ -282,6 +303,9 @@ export class PgRunStore implements RunStore {
       tokensIn: 0,
       tokensOut: 0,
       costUsd: 0,
+      officeId: input.officeId ?? null,
+      zone: input.zone ?? null,
+      characterId: input.characterId ?? null,
     };
   }
 
@@ -303,6 +327,9 @@ export class PgRunStore implements RunStore {
       tokensIn: Number(row.tokensIn),
       tokensOut: Number(row.tokensOut),
       costUsd: Number(row.costUsd),
+      officeId: row.officeId ?? null,
+      zone: row.zone ?? null,
+      characterId: row.characterId ?? null,
     };
   }
 
@@ -324,6 +351,9 @@ export class PgRunStore implements RunStore {
       tokensIn: Number(r.tokensIn),
       tokensOut: Number(r.tokensOut),
       costUsd: Number(r.costUsd),
+      officeId: r.officeId ?? null,
+      zone: r.zone ?? null,
+      characterId: r.characterId ?? null,
     }));
   }
 

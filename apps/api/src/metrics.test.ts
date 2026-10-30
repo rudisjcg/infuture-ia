@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "./app";
+import { buildTestApp as buildApp } from "./test-auth";
 import { loadEnv } from "./env";
 import { MetricsCollector } from "./system/metrics";
 

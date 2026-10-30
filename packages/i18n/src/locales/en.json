@@ -192,7 +192,30 @@
     "secretMissing": "This connection has no stored key. Remove it and add it again.",
     "connectionNotFound": "That connection does not exist or was removed.",
     "vaultUnavailable": "The credential vault is off. Set INFUTURE_MASTER_KEY (generate it with pnpm vault:key) and restart the API.",
-    "unauthorized": "This action needs a valid API token (Authorization: Bearer <API_TOKEN>)."
+    "unauthorized": "This action needs a valid API token (Authorization: Bearer <API_TOKEN>).",
+    "authRequired": "Sign in to continue (session cookie or Authorization: Bearer token).",
+    "invalidCredentials": "Wrong e-mail or password.",
+    "signupClosed": "Sign-up is closed. Ask the workspace owner for an account.",
+    "emailTaken": "An account with that e-mail already exists."
+  },
+  "auth": {
+    "loginTitle": "Sign in",
+    "signupTitle": "Create account",
+    "setupTitle": "Create the owner account",
+    "setupHint": "No accounts exist yet. The first account becomes the workspace owner.",
+    "email": "E-mail",
+    "password": "Password",
+    "passwordHint": "At least 8 characters.",
+    "displayName": "Name (optional)",
+    "submitLogin": "Sign in",
+    "submitSignup": "Create account",
+    "toSignup": "No account? Create one",
+    "toLogin": "Already have an account? Sign in",
+    "logout": "Sign out",
+    "signedInAs": "Signed in as {{name}}",
+    "serviceToken": "API token",
+    "checking": "Checking session…",
+    "failed": "Could not complete the request. Try again."
   },
   "connections": {
     "title": "Connections",
@@ -406,7 +429,9 @@
         "dev": "Dev studio",
         "ops": "Operations center",
         "minimal": "Minimal (reception + coffee)"
-      }
+      },
+      "capacity": "Capacity per zone (empty = default)",
+      "capacityFor": "{{zone}} capacity"
     },
     "edit": {
       "open": "Edit office",
@@ -451,7 +476,12 @@
       "statusUnknown": "Unknown",
       "estimate": "estimate",
       "simulated": "simulated",
-      "available": "Available"
+      "available": "Available",
+      "assign": "Assign task",
+      "assignPlaceholder": "Goal for this agent…",
+      "assignSubmit": "Assign",
+      "assignSent": "Run assigned to this agent",
+      "assignError": "Could not assign the run"
     },
     "demoTasks": {
       "fullstack": "Refactor the runs endpoint",

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "./app";
+import { buildTestApp as buildApp } from "./test-auth";
 import { loadEnv } from "./env";
 import { DEFAULT_OFFICE_ID, MemoryOfficeStore } from "./offices/store";
 import { LOCAL_WORKSPACE_ID } from "./connections/store";
@@ -128,7 +128,12 @@ describe("office characters persistence", () => {
     const after = (await app.inject({ method: "GET", url: `/api/v1/offices/${DEFAULT_OFFICE_ID}` })).json();
     expect(after.characters).toHaveLength(characters.length);
     expect(after.characters.at(-1)).toEqual(sprite);
-    expect(after).toMatchObject({ name: "HQ edit", theme: "#0ea5e9", zones: ["dev", "coffee"], isDefault: true });
+    expect(after).toMatchObject({
+      name: "HQ edit",
+      theme: "#0ea5e9",
+      zones: ["dev", "coffee"],
+      isDefault: true,
+    });
   });
 
   it("rejects invalid characters and more than 24 sprites", async () => {

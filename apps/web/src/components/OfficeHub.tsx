@@ -10,17 +10,20 @@ import {
   type OfficeConfig,
   type Template,
   type ZoneKey,
-} from "./Office3D";
+} from "./officeModel";
 import {
   ACTIVE_RUN,
+  DEFAULT_ZONE_CAPACITY,
+  assignTasks,
   completedFor,
+  completedFromRuns,
   currentStep,
   doneToday,
   occupancy,
   racksFromServices,
-  taskForIndex,
   zoneCapacity,
   type ApiService,
+  type CharTask,
   type HistoryPoint,
   type Rack,
   type Run,
@@ -57,6 +60,7 @@ const toConfig = (o: ApiOffice): OfficeConfig => ({
   isDefault: o.isDefault,
   zones: o.zones.filter((z): z is ZoneKey => (ALL_ZONE_KEYS as string[]).includes(z)),
   characters: o.characters,
+  zoneCapacity: o.zoneCapacity ?? {},
 });
 
 function readLocal(): OfficeConfig[] {
@@ -176,7 +180,18 @@ const simulatedRacks = (prev: Rack[]): Rack[] => {
   const base: Rack[] =
     prev.length > 0 && prev.every((r) => !r.real)
       ? prev
-      : [{ name: "api", kind: "api", status: "down", cpu: 30, mem: 45, latency: null, uptimeSec: null, real: false }];
+      : [
+          {
+            name: "api",
+            kind: "api",
+            status: "down",
+            cpu: 30,
+            mem: 45,
+            latency: null,
+            uptimeSec: null,
+            real: false,
+          },
+        ];
   return base.map((r) => ({ ...r, cpu: walk(r.cpu ?? 30, 14, 5, 98), mem: walk(r.mem ?? 45, 6, 15, 95) }));
 };
 
@@ -225,7 +240,9 @@ export function useLiveData(): LiveData {
           active.map(async (r) => {
             const dr = await fetch(`/api/v1/runs/${encodeURIComponent(r.id)}`);
             if (!dr.ok) return;
-            const step = currentStep(((await dr.json()) as { tasks?: { title: string; status: string }[] }).tasks ?? []);
+            const step = currentStep(
+              ((await dr.json()) as { tasks?: { title: string; status: string }[] }).tasks ?? [],
+            );
             if (step) steps[r.id] = step;
           }),
         );
@@ -256,8 +273,7 @@ export function useLiveData(): LiveData {
 }
 
 /** Text for a character's current task: real run + step, "available", or a labeled demo task (offline). */
-export function taskFor(t: TFunction, live: LiveData, c: CharLive, index: number): string | null {
-  const task = taskForIndex(live.apiOk, live.runs, live.steps, index, c.roleKey, c.zone);
+export function taskText(t: TFunction, task: CharTask): string | null {
   if (task.kind === "run") {
     const goal = task.goal.slice(0, 80);
     return task.step
@@ -271,9 +287,75 @@ export function taskFor(t: TFunction, live: LiveData, c: CharLive, index: number
   return null;
 }
 
-type OfficeWithCapacity = OfficeConfig & { zoneCapacity?: Partial<Record<ZoneKey, number>> };
-const capacityOf = (office: OfficeConfig, zone: ZoneKey) =>
-  zoneCapacity(zone, (office as OfficeWithCapacity).zoneCapacity);
+const capacityOf = (office: OfficeConfig, zone: ZoneKey) => zoneCapacity(zone, office.zoneCapacity);
+
+/** Assigns a new run to a character explicitly (office, zone and character are stored on the run). */
+export async function assignRun(goal: string, officeId: string, c: CharLive): Promise<boolean> {
+  try {
+    const res = await fetch("/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        goal,
+        officeId,
+        characterId: String(c.id),
+        ...(c.zone !== "hallway" ? { zone: c.zone } : {}),
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Seat inputs per zone; empty means "use the default". */
+function CapacityInputs({
+  zones,
+  value,
+  onChange,
+}: {
+  zones: ZoneKey[];
+  value: Partial<Record<ZoneKey, number>>;
+  onChange: (v: Partial<Record<ZoneKey, number>>) => void;
+}) {
+  const { t } = useTranslation();
+  if (zones.length === 0) return null;
+  return (
+    <div className="ov-field">
+      <span className="ov-caption">{t("office.create.capacity")}</span>
+      <div className="ov-zone-checks">
+        {zones.map((z) => (
+          <label key={z} className="ov-check is-on">
+            <span className="ov-label-dot" style={{ background: ZONE_LAYOUT[z].color }} />
+            <span>{t(`office.zones.${z}`)}</span>
+            <input
+              type="number"
+              className="ov-text ov-cap-input"
+              min={1}
+              max={50}
+              aria-label={t("office.create.capacityFor", { zone: t(`office.zones.${z}`) })}
+              placeholder={String(DEFAULT_ZONE_CAPACITY[z] ?? 4)}
+              value={value[z] ?? ""}
+              onChange={(e) => {
+                const next = { ...value };
+                const v = Math.round(Number(e.target.value));
+                if (e.target.value === "" || !Number.isFinite(v) || v < 1) delete next[z];
+                else next[z] = Math.min(50, v);
+                onChange(next);
+              }}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Keeps only capacities of zones the office includes. */
+const capacityForZones = (cap: Partial<Record<ZoneKey, number>>, zones: ZoneKey[]) =>
+  Object.fromEntries(Object.entries(cap).filter(([k]) => zones.includes(k as ZoneKey))) as Partial<
+    Record<ZoneKey, number>
+  >;
 
 /** Occupancy samples kept per office/zone for the whole session, so reopening shows history. */
 const occHistory = new Map<string, number[]>();
@@ -309,6 +391,7 @@ export function CreateOfficeDialog({
   const [preset, setPreset] = useState("full");
   const [zones, setZones] = useState<ZoneKey[]>(PRESETS.full!.zones);
   const [people, setPeople] = useState(4);
+  const [capacity, setCapacity] = useState<Partial<Record<ZoneKey, number>>>({});
 
   const applyPreset = (key: string) => {
     setPreset(key);
@@ -329,7 +412,14 @@ export function CreateOfficeDialog({
       { length: people },
       (_, i) => CHARACTER_TEMPLATES[i % CHARACTER_TEMPLATES.length]!,
     );
-    onCreate({ name: name.trim(), theme, zones: ALL_ZONE_KEYS.filter((z) => zones.includes(z)), characters });
+    const ordered = ALL_ZONE_KEYS.filter((z) => zones.includes(z));
+    onCreate({
+      name: name.trim(),
+      theme,
+      zones: ordered,
+      characters,
+      zoneCapacity: capacityForZones(capacity, ordered),
+    });
   };
 
   return (
@@ -398,6 +488,12 @@ export function CreateOfficeDialog({
           {zones.length === 0 && <span className="ov-error">{t("office.create.needZone")}</span>}
         </div>
 
+        <CapacityInputs
+          zones={ALL_ZONE_KEYS.filter((z) => zones.includes(z))}
+          value={capacity}
+          onChange={setCapacity}
+        />
+
         <label className="ov-field">
           <span className="ov-between">
             <span className="ov-caption">{t("office.create.people")}</span>
@@ -441,13 +537,15 @@ export function EditOfficeDialog({
   const [name, setName] = useState(office.name);
   const [theme, setTheme] = useState(office.theme);
   const [zones, setZones] = useState<ZoneKey[]>(office.zones);
+  const [capacity, setCapacity] = useState<Partial<Record<ZoneKey, number>>>(office.zoneCapacity ?? {});
   const toggleZone = (z: ZoneKey) =>
     setZones((prev) => (prev.includes(z) ? prev.filter((x) => x !== z) : [...prev, z]));
   const valid = name.trim().length > 0 && zones.length > 0;
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    onSave({ name: name.trim(), theme, zones: ALL_ZONE_KEYS.filter((z) => zones.includes(z)) });
+    const ordered = ALL_ZONE_KEYS.filter((z) => zones.includes(z));
+    onSave({ name: name.trim(), theme, zones: ordered, zoneCapacity: capacityForZones(capacity, ordered) });
   };
   const swatches = THEMES.includes(theme) ? THEMES : [theme, ...THEMES];
 
@@ -504,6 +602,12 @@ export function EditOfficeDialog({
           </div>
           {zones.length === 0 && <span className="ov-error">{t("office.edit.needZone")}</span>}
         </div>
+
+        <CapacityInputs
+          zones={ALL_ZONE_KEYS.filter((z) => zones.includes(z))}
+          value={capacity}
+          onChange={setCapacity}
+        />
 
         <div className="ov-modal-actions">
           <button type="button" className="ov-tbtn ov-render" onClick={onCancel}>
@@ -585,12 +689,16 @@ export function OfficeDashboard({
 }) {
   const { t } = useTranslation();
   const [, setTick] = useState(0);
+  const [assigning, setAssigning] = useState<number | null>(null);
+  const [assignGoal, setAssignGoal] = useState("");
+  const [assignMsg, setAssignMsg] = useState<{ id: number; ok: boolean } | null>(null);
   const simCompleted = useRef(5 + Math.floor(Math.random() * 10));
   const simAvg = useRef(4 + Math.random() * 5);
   const occKey = `${office.id}:${scope.kind === "office" ? "*" : scope.zone}`;
 
   const all = snapshot();
-  const indexed = all.map((c, i) => ({ c, task: taskFor(t, live, c, i) }));
+  const tasks = assignTasks(live.apiOk, live.runs, live.steps, office.id, all);
+  const indexed = all.map((c, i) => ({ c, task: taskText(t, tasks[i] ?? { kind: "idle" }) }));
   const here = scope.kind === "office" ? indexed : indexed.filter((x) => x.c.zone === scope.zone);
   const activeTasks = here.filter((x) => x.task).length;
   const capacity =
@@ -602,8 +710,11 @@ export function OfficeDashboard({
   // Completed today / average duration from real runs when the API answers.
   const done = doneToday(live.runs);
   const completedInfo = live.apiOk
-    ? completedFor(done.length, here.length, all.length, scope.kind === "office")
-    : { value: completedFor(simCompleted.current, here.length, all.length, scope.kind === "office").value, estimate: true };
+    ? completedFromRuns(done, office.id, scope.kind === "office" ? null : scope.zone, here.length, all.length)
+    : {
+        value: completedFor(simCompleted.current, here.length, all.length, scope.kind === "office").value,
+        estimate: true,
+      };
   const completed = completedInfo.value;
   const avgMin =
     live.apiOk && done.length > 0
@@ -737,8 +848,54 @@ export function OfficeDashboard({
                       : t("office.stateIn", { zone: t(`office.zones.${c.zone}`) })}
                   </span>
                   <span className="ov-task">
-                    {t("office.dash.task")}: {task ?? t(live.apiOk ? "office.dash.available" : "office.dash.idle")}
+                    {t("office.dash.task")}:{" "}
+                    {task ?? t(live.apiOk ? "office.dash.available" : "office.dash.idle")}
                   </span>
+                  {live.apiOk && assigning !== c.id && (
+                    <button
+                      type="button"
+                      className="ov-tbtn ov-assign"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAssigning(c.id);
+                        setAssignGoal("");
+                        setAssignMsg(null);
+                      }}
+                    >
+                      {t("office.dash.assign")}
+                    </button>
+                  )}
+                  {assigning === c.id && (
+                    <form
+                      className="ov-assign-form"
+                      onClick={(e) => e.stopPropagation()}
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const goal = assignGoal.trim();
+                        if (!goal) return;
+                        setAssigning(null);
+                        setAssignMsg({ id: c.id, ok: true });
+                        void assignRun(goal, office.id, c).then((ok) => setAssignMsg({ id: c.id, ok }));
+                      }}
+                    >
+                      <input
+                        className="ov-text"
+                        autoFocus
+                        maxLength={5000}
+                        value={assignGoal}
+                        placeholder={t("office.dash.assignPlaceholder")}
+                        onChange={(e) => setAssignGoal(e.target.value)}
+                      />
+                      <button type="submit" className="ov-new" disabled={!assignGoal.trim()}>
+                        {t("office.dash.assignSubmit")}
+                      </button>
+                    </form>
+                  )}
+                  {assignMsg?.id === c.id && (
+                    <span className={assignMsg.ok ? "ov-tiny-muted" : "ov-error"}>
+                      {t(assignMsg.ok ? "office.dash.assignSent" : "office.dash.assignError")}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

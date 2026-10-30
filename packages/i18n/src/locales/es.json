@@ -192,7 +192,30 @@
     "secretMissing": "Esta conexión no tiene una clave guardada. Elimínala y vuelve a añadirla.",
     "connectionNotFound": "Esa conexión no existe o fue eliminada.",
     "vaultUnavailable": "La bóveda de credenciales está apagada. Define INFUTURE_MASTER_KEY (genérala con pnpm vault:key) y reinicia la API.",
-    "unauthorized": "Esta acción necesita un token de API válido (Authorization: Bearer <API_TOKEN>)."
+    "unauthorized": "Esta acción necesita un token de API válido (Authorization: Bearer <API_TOKEN>).",
+    "authRequired": "Inicia sesión para continuar (cookie de sesión o Authorization: Bearer token).",
+    "invalidCredentials": "Correo o contraseña incorrectos.",
+    "signupClosed": "El registro está cerrado. Pide una cuenta al propietario del espacio.",
+    "emailTaken": "Ya existe una cuenta con ese correo."
+  },
+  "auth": {
+    "loginTitle": "Iniciar sesión",
+    "signupTitle": "Crear cuenta",
+    "setupTitle": "Crea la cuenta del propietario",
+    "setupHint": "Aún no hay cuentas. La primera cuenta será la propietaria del espacio de trabajo.",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "passwordHint": "Al menos 8 caracteres.",
+    "displayName": "Nombre (opcional)",
+    "submitLogin": "Entrar",
+    "submitSignup": "Crear cuenta",
+    "toSignup": "¿No tienes cuenta? Crea una",
+    "toLogin": "¿Ya tienes cuenta? Inicia sesión",
+    "logout": "Cerrar sesión",
+    "signedInAs": "Sesión iniciada como {{name}}",
+    "serviceToken": "Token de API",
+    "checking": "Comprobando sesión…",
+    "failed": "No se pudo completar la solicitud. Inténtalo de nuevo."
   },
   "connections": {
     "title": "Conexiones",
@@ -406,7 +429,9 @@
         "dev": "Estudio de desarrollo",
         "ops": "Centro de operaciones",
         "minimal": "Mínima (recepción + café)"
-      }
+      },
+      "capacity": "Capacidad por zona (vacío = por defecto)",
+      "capacityFor": "Capacidad de {{zone}}"
     },
     "edit": {
       "open": "Editar oficina",
@@ -451,7 +476,12 @@
       "statusUnknown": "Desconocido",
       "estimate": "estimado",
       "simulated": "simulado",
-      "available": "Disponible"
+      "available": "Disponible",
+      "assign": "Asignar tarea",
+      "assignPlaceholder": "Objetivo para este agente…",
+      "assignSubmit": "Asignar",
+      "assignSent": "Run asignado a este agente",
+      "assignError": "No se pudo asignar el run"
     },
     "demoTasks": {
       "fullstack": "Refactorizar el endpoint de runs",

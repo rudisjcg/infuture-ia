@@ -35,7 +35,7 @@ function isAuthorizedForCode(request: FastifyRequest, opts: ToolRoutesOptions): 
 }
 
 const testToolSchema = z.object({
-  args: z.record(z.unknown()).default({}),
+  args: z.record(z.string(), z.unknown()).default({}),
 });
 
 const createCustomToolSchema = z.object({
@@ -47,6 +47,7 @@ const createCustomToolSchema = z.object({
     .regex(/^[a-z][a-z0-9_]*$/, "Name must be snake_case (e.g. currency_convert)"),
   description: z.string().trim().min(5).max(300),
   parameters: z.record(
+    z.string(),
     z.object({
       type: z.enum(["string", "number", "boolean", "object", "array"]),
       description: z.string().trim(),

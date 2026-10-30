@@ -22,7 +22,7 @@ const ingestDocumentSchema = z.object({
   title: z.string().trim().min(2).max(200),
   category: z.string().trim().default("general"),
   content: z.string().trim().min(10).max(100000),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const queryKnowledgeSchema = z.object({

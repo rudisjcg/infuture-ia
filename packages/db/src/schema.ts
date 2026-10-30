@@ -42,9 +42,25 @@ export const users = pgTable(
     displayName: text("display_name"),
     /** Interface language chosen by the user. */
     locale: text("locale").notNull().default("en"),
+    /** scrypt hash ("scrypt$N$r$p$salt$hash"); null for users that cannot log in with a password. */
+    passwordHash: text("password_hash"),
     createdAt: createdAt(),
   },
   (t) => [check("users_locale_check", sql`${t.locale} in ('en', 'es')`)],
+);
+
+/** Login sessions. The id is the SHA-256 of the opaque token kept in the HttpOnly cookie. */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
 export const memberships = pgTable(
@@ -187,6 +203,10 @@ export const runs = pgTable(
     tokensIn: bigint("tokens_in", { mode: "number" }).notNull().default(0),
     tokensOut: bigint("tokens_out", { mode: "number" }).notNull().default(0),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+    /** Optional attribution to an office, zone and character (agent) of the virtual office. */
+    officeId: text("office_id"),
+    zone: text("zone"),
+    characterId: text("character_id"),
   },
   (t) => [
     index("runs_workspace_idx").on(t.workspaceId),
@@ -531,6 +551,8 @@ export const offices = pgTable(
     theme: text("theme").notNull().default("#6366f1"),
     zones: text("zones").array().notNull(),
     characters: jsonb("characters").notNull().default([]),
+    /** Optional per-zone capacity overrides, e.g. { "dev": 8 }. */
+    zoneCapacity: jsonb("zone_capacity").$type<Record<string, number>>(),
     isDefault: boolean("is_default").notNull().default(false),
     createdAt: createdAt(),
   },

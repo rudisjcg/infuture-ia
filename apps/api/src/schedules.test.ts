@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { CCEvent } from "@infuture/events";
 import { generateMasterKey, loadMasterKey } from "@infuture/vault";
-import { buildApp } from "./app";
+import { buildTestApp as buildApp } from "./test-auth";
 import { MemoryConnectionStore } from "./connections/store";
 import { MemoryRunStore } from "./runs/store";
 import { MemoryScheduleStore } from "./schedules/store";

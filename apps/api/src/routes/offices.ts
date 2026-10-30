@@ -15,11 +15,16 @@ const characterSchema = z.object({
   accessory: z.enum(OFFICE_ACCESSORIES),
 });
 
+const zoneCapacitySchema = z
+  .object(Object.fromEntries(OFFICE_ZONE_KEYS.map((k) => [k, z.number().int().min(1).max(50).optional()])))
+  .strict();
+
 const createSchema = z.object({
   name: z.string().trim().min(1).max(80),
   theme: hex.default("#6366f1"),
   zones: z.array(z.enum(OFFICE_ZONE_KEYS)).min(1).max(OFFICE_ZONE_KEYS.length),
   characters: z.array(characterSchema).max(24).default([]),
+  zoneCapacity: zoneCapacitySchema.default({}),
 });
 
 const updateSchema = z.object({
@@ -27,6 +32,7 @@ const updateSchema = z.object({
   theme: hex.optional(),
   zones: z.array(z.enum(OFFICE_ZONE_KEYS)).min(1).max(OFFICE_ZONE_KEYS.length).optional(),
   characters: z.array(characterSchema).max(24).optional(),
+  zoneCapacity: zoneCapacitySchema.optional(),
 });
 
 const serialize = (o: OfficeRecord) => ({ ...o, createdAt: o.createdAt.toISOString() });

@@ -1,10 +1,11 @@
 import os from "node:os";
+import type { WorkerStatusSnapshot } from "./workerStatus";
 
 /*
  * Real system metrics for the office dashboards: this API process, the host it runs on,
  * the database (when configured) and the worker. The worker runs in-process (executeGoal
- * from @infuture/worker) and has no heartbeat or queue, so its status is reported as
- * "unknown" instead of being invented.
+ * from @infuture/worker); its real status comes from a WorkerStatusTracker. Without one
+ * the status is reported as "unknown" instead of being invented.
  */
 
 export type ServiceStatus = "ok" | "warn" | "down" | "unknown";
@@ -19,6 +20,8 @@ export type ServiceMetrics = {
   latencyMs: number | null;
   uptimeSec: number | null;
   detail?: string;
+  /** Real in-process worker status (only on the worker service when tracked). */
+  worker?: WorkerStatusSnapshot;
 };
 
 export type MetricsSnapshot = {
@@ -41,6 +44,8 @@ export type MetricsDeps = {
   dbPing?: () => Promise<unknown>;
   /** Counts active runs (queued/running/waiting); optional. */
   activeRuns?: () => Promise<number>;
+  /** In-process worker status (busy/idle, active count, last activity, errors). */
+  worker?: () => WorkerStatusSnapshot;
   now?: () => number;
 };
 
@@ -155,15 +160,22 @@ export class MetricsCollector {
         activeRuns = null;
       }
     }
+    const worker = this.deps.worker?.();
+    const nowMs = this.deps.now?.() ?? Date.now();
     services.push({
       name: "worker",
       kind: "worker",
-      status: "unknown",
+      status: worker ? (worker.state === "error" ? "warn" : "ok") : "unknown",
       cpu: null,
       mem: null,
       latencyMs: null,
-      uptimeSec: null,
-      detail: activeRuns === null ? "in-process" : `in-process · ${activeRuns} active`,
+      uptimeSec: worker ? Math.max(0, Math.round((nowMs - Date.parse(worker.startedAt)) / 1000)) : null,
+      detail: worker
+        ? `in-process · ${worker.state} · ${worker.active} active`
+        : activeRuns === null
+          ? "in-process"
+          : `in-process · ${activeRuns} active`,
+      ...(worker ? { worker } : {}),
     });
 
     const at = new Date(this.deps.now?.() ?? Date.now()).toISOString();

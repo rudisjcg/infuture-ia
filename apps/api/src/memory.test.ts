@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { CCEvent } from "@infuture/events";
-import { buildApp } from "./app";
+import { buildTestApp as buildApp } from "./test-auth";
 import { MemoryKnowledgeStore } from "./memory/store";
 import { loadEnv } from "./env";
 
