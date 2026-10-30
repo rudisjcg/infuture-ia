@@ -71,10 +71,14 @@ export const payloadSchemas = {
     costUsd: money,
     latencyMs: z.number().int().nonnegative(),
   }),
-  "tool.call.started": z.object({ callId: id, tool: z.string(), args: z.record(z.unknown()) }),
+  "tool.call.started": z.object({ callId: id, tool: z.string(), args: z.record(z.string(), z.unknown()) }),
   "tool.call.completed": z.object({ callId: id, tool: z.string(), summary: z.string() }),
   "tool.call.failed": z.object({ callId: id, tool: z.string(), error: z.string() }),
-  "approval.requested": z.object({ approvalId: id, action: z.string(), detail: z.record(z.unknown()) }),
+  "approval.requested": z.object({
+    approvalId: id,
+    action: z.string(),
+    detail: z.record(z.string(), z.unknown()),
+  }),
   "approval.resolved": z.object({
     approvalId: id,
     decision: z.enum(["approved", "rejected"]),

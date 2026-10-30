@@ -1,4 +1,4 @@
-import Fastify, { type FastifyServerOptions } from "fastify";
+import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { PROVIDERS } from "@infuture/providers";
@@ -80,7 +80,7 @@ export async function buildApp(env: Env, options: FastifyServerOptions = {}, dep
     });
   });
 
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error.validation) {
       return reply.code(400).send({
         error: { code: "validation", message: request.t("errors.validation", { details: error.message }) },

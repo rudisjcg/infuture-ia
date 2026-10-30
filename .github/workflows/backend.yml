@@ -1,0 +1,101 @@
+name: Backend
+
+# Solo corre cuando cambia el backend (API + paquetes compartidos) o sus
+# dependencias. Comprueba tipos, tests contra Postgres real, migraciones,
+# build de producción y que el servidor arranca y responde /health.
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "turbo.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/backend.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "turbo.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Credenciales efímeras del contenedor de CI, no un secreto.
+  DATABASE_URL: postgres://infuture:infuture@localhost:5432/infuture_test
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: infuture
+          POSTGRES_PASSWORD: infuture
+          POSTGRES_DB: infuture_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U infuture -d infuture_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      # Sin `version`: pnpm/action-setup toma la de `packageManager` en package.json.
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (API + paquetes)
+        run: pnpm turbo run typecheck --filter=@infuture/api...
+
+      - name: Aplicar migraciones
+        run: pnpm db:migrate
+
+      - name: Tests (API + paquetes, con Postgres)
+        env:
+          TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: pnpm turbo run test --filter=@infuture/api... --concurrency=1
+
+      - name: Build de producción
+        run: pnpm turbo run build --filter=@infuture/api
+
+      # Arranca el bundle de producción y comprueba que responde: detecta
+      # imports o variables de entorno que solo fallan en runtime.
+      - name: Smoke test /health
+        env:
+          NODE_ENV: production
+          API_HOST: 127.0.0.1
+          API_PORT: "4000"
+          API_TOKEN: ci-smoke-token-not-a-secret
+        run: |
+          node apps/api/dist/server.js > api.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4000/health; then
+              echo
+              code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4000/api/v1/offices)
+              echo "GET /api/v1/offices sin sesión -> $code"
+              test "$code" = "401"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat api.log
+          exit 1

@@ -16,7 +16,7 @@ const envSchema = z.object({
   /** Admin/service bearer token accepted on every /api/v1 route; required for custom code tools when API_HOST is not loopback. */
   API_TOKEN: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(16).optional()),
   /** Allow new accounts after the first one (which becomes the workspace owner). Closed by default. */
-  AUTH_SIGNUP_OPEN: booleanFlag.default("false"),
+  AUTH_SIGNUP_OPEN: booleanFlag.default(false),
   /** Login session lifetime in hours. */
   AUTH_SESSION_TTL_HOURS: z.coerce
     .number()

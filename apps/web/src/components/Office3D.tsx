@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import * as THREE from "three";
@@ -1524,7 +1524,10 @@ export function Office3D() {
   const minimapRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
   const tRef = useRef(t);
-  tRef.current = t;
+  // Sync after render (not during it) so the engine callbacks always read the latest values.
+  useLayoutEffect(() => {
+    tRef.current = t;
+  });
 
   const [characters, setCharacters] = useState<CharSummary[]>([]);
   const [activeId, setActiveId] = useState(0);
@@ -1543,7 +1546,9 @@ export function Office3D() {
   const office = offices.find((o) => o.id === officeId) ?? offices[0] ?? defaultOffice();
   const officeName = (o: OfficeConfig) => (o.isDefault ? t("office.offices.defaultName") : o.name);
   const stateRef = useRef({ renderMode, cameraMode, patrol });
-  stateRef.current = { renderMode, cameraMode, patrol };
+  useLayoutEffect(() => {
+    stateRef.current = { renderMode, cameraMode, patrol };
+  });
 
   useEffect(() => {
     let alive = true;

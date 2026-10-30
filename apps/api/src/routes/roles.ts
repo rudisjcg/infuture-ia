@@ -15,9 +15,9 @@ const RoleInputSchema = z.object({
     .min(1)
     .max(50)
     .regex(/^[a-z0-9_-]+$/, "id must be alphanumeric with dashes or underscores"),
-  name: z.union([z.string().trim().min(1), z.record(z.string().trim().min(1))]),
-  description: z.union([z.string().trim(), z.record(z.string().trim())]).optional(),
-  systemPrompt: z.union([z.string().trim().min(1), z.record(z.string().trim().min(1))]),
+  name: z.union([z.string().trim().min(1), z.record(z.string(), z.string().trim().min(1))]),
+  description: z.union([z.string().trim(), z.record(z.string(), z.string().trim())]).optional(),
+  systemPrompt: z.union([z.string().trim().min(1), z.record(z.string(), z.string().trim().min(1))]),
   tools: z.array(z.string()).default([]),
   limits: z
     .object({
@@ -31,9 +31,11 @@ const RoleInputSchema = z.object({
 });
 
 const RoleUpdateSchema = z.object({
-  name: z.union([z.string().trim().min(1), z.record(z.string().trim().min(1))]).optional(),
-  description: z.union([z.string().trim(), z.record(z.string().trim())]).optional(),
-  systemPrompt: z.union([z.string().trim().min(1), z.record(z.string().trim().min(1))]).optional(),
+  name: z.union([z.string().trim().min(1), z.record(z.string(), z.string().trim().min(1))]).optional(),
+  description: z.union([z.string().trim(), z.record(z.string(), z.string().trim())]).optional(),
+  systemPrompt: z
+    .union([z.string().trim().min(1), z.record(z.string(), z.string().trim().min(1))])
+    .optional(),
   tools: z.array(z.string()).optional(),
   limits: z
     .object({
