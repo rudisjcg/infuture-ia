@@ -1106,3 +1106,23 @@
 .ov-rack-meta {
   font-size: 10px;
 }
+
+/* Zone capacity inputs and explicit run assignment */
+.ov-cap-input {
+  width: 4.2rem;
+  padding: 0.15rem 0.35rem;
+  margin-left: auto;
+}
+.ov-assign {
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+}
+.ov-assign-form {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+.ov-assign-form .ov-text {
+  flex: 1;
+  min-width: 0;
+}

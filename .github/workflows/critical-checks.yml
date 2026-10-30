@@ -1,0 +1,105 @@
+name: Critical Checks
+
+# Puertas separadas a propósito: si fallan los tipos, sigue interesando saber
+# si además fallan los tests, si una migración no aplica limpia o si hay un
+# secreto filtrado. Un solo job que para en el primer error esconde el resto.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: critical-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Sin `version`: pnpm/action-setup toma la de `packageManager` en package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Secuencial: en paralelo vitest de api + web puede quedarse sin memoria.
+      - run: pnpm turbo run test --concurrency=1
+
+  postgres-store-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: infuture
+          POSTGRES_PASSWORD: infuture
+          POSTGRES_DB: infuture_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U infuture -d infuture_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      # Credenciales efímeras del contenedor de CI, no un secreto.
+      DATABASE_URL: postgres://infuture:infuture@localhost:5432/infuture_test
+      TEST_DATABASE_URL: postgres://infuture:infuture@localhost:5432/infuture_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Aplica las migraciones de packages/db/drizzle contra una base vacía:
+      # comprueba que todas aplican limpias y en orden.
+      - name: Aplicar migraciones
+        run: pnpm db:migrate
+      # Con TEST_DATABASE_URL definida se ejecutan los tests de los stores Pg
+      # que en local se saltan.
+      - name: Tests contra Postgres
+        run: pnpm --filter @infuture/api test
+
+  security-check:
+    runs-on: ubuntu-latest
+    # gitleaks-action lee los commits del PR y comenta el resultado.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `moderate`/`low` generan demasiado ruido para bloquear un PR; `high`/`critical` sí.
+      - name: Auditoría de dependencias (high+)
+        run: pnpm audit --audit-level=high
+      - name: Escaneo de secretos
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

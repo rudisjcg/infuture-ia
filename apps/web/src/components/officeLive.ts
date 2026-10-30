@@ -42,7 +42,17 @@ export type Rack = {
   cpuHistory?: number[];
 };
 
-export type Run = { id: string; goal: string; status: string; startedAt: string; endedAt: string | null };
+export type Run = {
+  id: string;
+  goal: string;
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+  /** Optional attribution stored by the API; null/absent for runs not assigned to a character. */
+  officeId?: string | null;
+  zone?: string | null;
+  characterId?: string | null;
+};
 
 export const ACTIVE_RUN = new Set(["running", "queued", "waiting_approval"]);
 
@@ -54,7 +64,11 @@ export function racksFromServices(
 ): Rack[] {
   return services.map((s) => {
     const cpuHistory =
-      s.kind === "api" ? history.map((h) => h.apiCpu) : s.kind === "host" ? history.map((h) => h.hostCpu) : undefined;
+      s.kind === "api"
+        ? history.map((h) => h.apiCpu)
+        : s.kind === "host"
+          ? history.map((h) => h.hostCpu)
+          : undefined;
     return {
       name: s.name,
       kind: s.kind,
@@ -92,6 +106,44 @@ export function taskForIndex(
   const run = active[index];
   if (!run) return { kind: "idle" };
   return { kind: "run", runId: run.id, goal: run.goal, step: steps[run.id] ?? null };
+}
+
+/**
+ * Assigns active runs to characters of one office. Runs explicitly attributed to a character
+ * (characterId + officeId) go to that character; unattributed runs fill the remaining
+ * characters in start order (oldest first). Runs attributed to another office are ignored.
+ */
+export function assignTasks(
+  apiOk: boolean,
+  runs: Run[],
+  steps: Record<string, string>,
+  officeId: string,
+  chars: { id: number; roleKey: string; zone: string }[],
+): CharTask[] {
+  if (!apiOk)
+    return chars.map((c) => (c.zone === "coffee" ? { kind: "idle" } : { kind: "demo", roleKey: c.roleKey }));
+  const active = runs
+    .filter((r) => ACTIVE_RUN.has(r.status))
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const toTask = (r: Run): CharTask => ({
+    kind: "run",
+    runId: r.id,
+    goal: r.goal,
+    step: steps[r.id] ?? null,
+  });
+  const explicit = chars.map((c) =>
+    active.find((r) => r.characterId === String(c.id) && (r.officeId ?? officeId) === officeId),
+  );
+  const pool = active.filter((r) => !r.characterId && (!r.officeId || r.officeId === officeId));
+  let next = 0;
+  return chars.map((_, i) => {
+    const own = explicit[i];
+    if (own) return toTask(own);
+    const r = pool[next];
+    if (!r) return { kind: "idle" };
+    next += 1;
+    return toTask(r);
+  });
 }
 
 /** Current step of a run: the running task, else the latest one. */
@@ -138,4 +190,24 @@ export function completedFor(
   if (wholeOffice) return { value: done, estimate: false };
   if (peopleTotal === 0) return { value: 0, estimate: true };
   return { value: Math.round((done * peopleHere) / peopleTotal), estimate: true };
+}
+
+/**
+ * Completed runs from real data. Runs attributed to this office (and zone) are counted exactly;
+ * only unattributed runs are shared by headcount, and only then is the value an estimate.
+ */
+export function completedFromRuns(
+  done: Run[],
+  officeId: string,
+  zone: string | null,
+  peopleHere: number,
+  peopleTotal: number,
+): { value: number; estimate: boolean } {
+  const mine = done.filter((r) => r.officeId === officeId);
+  const unattributed = done.filter((r) => !r.officeId && !r.zone);
+  if (zone === null) return { value: mine.length + unattributed.length, estimate: false };
+  const exact = mine.filter((r) => r.zone === zone).length;
+  if (unattributed.length === 0) return { value: exact, estimate: false };
+  const share = peopleTotal > 0 ? Math.round((unattributed.length * peopleHere) / peopleTotal) : 0;
+  return { value: exact + share, estimate: true };
 }

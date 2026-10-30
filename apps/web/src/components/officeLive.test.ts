@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  assignTasks,
   completedFor,
+  completedFromRuns,
   currentStep,
   doneToday,
   occupancy,
@@ -23,7 +25,15 @@ describe("racksFromServices", () => {
   it("builds one real rack per service with the browser-measured API latency", () => {
     const services: ApiService[] = [
       { name: "api", kind: "api", status: "ok", cpu: 3, mem: 2, latencyMs: null, uptimeSec: 10 },
-      { name: "worker", kind: "worker", status: "unknown", cpu: null, mem: null, latencyMs: null, uptimeSec: null },
+      {
+        name: "worker",
+        kind: "worker",
+        status: "unknown",
+        cpu: null,
+        mem: null,
+        latencyMs: null,
+        uptimeSec: null,
+      },
     ];
     const history = [1, 2].map((v) => ({
       at: "",
@@ -44,7 +54,11 @@ describe("racksFromServices", () => {
 });
 
 describe("taskForIndex", () => {
-  const runs = [run("b", "running", "2026-01-02"), run("a", "queued", "2026-01-01"), run("c", "done", "2026-01-01")];
+  const runs = [
+    run("b", "running", "2026-01-02"),
+    run("a", "queued", "2026-01-01"),
+    run("c", "done", "2026-01-01"),
+  ];
   it("maps active runs to characters in start order, with the current step", () => {
     expect(taskForIndex(true, runs, { a: "Plan" }, 0, "qa", "dev")).toEqual({
       kind: "run",
@@ -52,7 +66,11 @@ describe("taskForIndex", () => {
       goal: "goal a",
       step: "Plan",
     });
-    expect(taskForIndex(true, runs, {}, 1, "qa", "dev")).toMatchObject({ kind: "run", runId: "b", step: null });
+    expect(taskForIndex(true, runs, {}, 1, "qa", "dev")).toMatchObject({
+      kind: "run",
+      runId: "b",
+      step: null,
+    });
   });
   it("shows idle when online without a run, and demo tasks only offline", () => {
     expect(taskForIndex(true, runs, {}, 2, "qa", "dev")).toEqual({ kind: "idle" });
@@ -88,5 +106,52 @@ describe("KPIs", () => {
     expect(completedFor(4, 1, 4, true)).toEqual({ value: 4, estimate: false });
     expect(completedFor(4, 1, 4, false)).toEqual({ value: 1, estimate: true });
     expect(completedFor(4, 0, 0, false)).toEqual({ value: 0, estimate: true });
+  });
+});
+
+describe("assignTasks (explicit attribution)", () => {
+  const a = (id: string, startedAt: string, extra: Partial<Run> = {}): Run => ({
+    ...run(id, "running", startedAt),
+    ...extra,
+  });
+  const chars = [
+    { id: 0, roleKey: "qa", zone: "dev" },
+    { id: 1, roleKey: "ux", zone: "meeting" },
+    { id: 2, roleKey: "sre", zone: "coffee" },
+  ];
+  it("gives attributed runs to their character and fills the rest in start order", () => {
+    const runs = [
+      a("old", "2026-01-01T00:00:00Z"),
+      a("mine", "2026-01-02T00:00:00Z", { officeId: "o1", characterId: "2" }),
+      a("other-office", "2026-01-01T00:00:00Z", { officeId: "o2", characterId: "0" }),
+      a("new", "2026-01-03T00:00:00Z"),
+    ];
+    const tasks = assignTasks(true, runs, {}, "o1", chars);
+    expect(tasks.map((t) => (t.kind === "run" ? t.runId : t.kind))).toEqual(["old", "new", "mine"]);
+  });
+  it("returns demo/idle offline", () => {
+    expect(assignTasks(false, [], {}, "o1", chars).map((t) => t.kind)).toEqual(["demo", "demo", "idle"]);
+  });
+});
+
+describe("completedFromRuns", () => {
+  const d = (id: string, extra: Partial<Run> = {}): Run => ({
+    ...run(id, "done", "2026-03-10T10:00:00", "2026-03-10T11:00:00"),
+    ...extra,
+  });
+  it("is exact when every run is attributed", () => {
+    const done = [
+      d("1", { officeId: "o1", zone: "dev" }),
+      d("2", { officeId: "o1", zone: "dev" }),
+      d("3", { officeId: "o1", zone: "coffee" }),
+    ];
+    expect(completedFromRuns(done, "o1", "dev", 1, 4)).toEqual({ value: 2, estimate: false });
+    expect(completedFromRuns(done, "o1", null, 1, 4)).toEqual({ value: 3, estimate: false });
+    expect(completedFromRuns(done, "o2", "dev", 1, 4)).toEqual({ value: 0, estimate: false });
+  });
+  it("estimates only the unattributed share", () => {
+    const done = [d("1", { officeId: "o1", zone: "dev" }), d("2"), d("3"), d("4"), d("5")];
+    expect(completedFromRuns(done, "o1", "dev", 2, 4)).toEqual({ value: 3, estimate: true });
+    expect(completedFromRuns(done, "o1", null, 2, 4)).toEqual({ value: 5, estimate: false });
   });
 });

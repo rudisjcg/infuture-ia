@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app";
+import { buildTestApp } from "./test-auth";
 import { MemoryMcpServerStore } from "./tools/store";
 import { loadEnv } from "./env";
 
@@ -9,7 +10,7 @@ const mcpStore = new MemoryMcpServerStore();
 
 beforeAll(async () => {
   const env = loadEnv({ NODE_ENV: "test" });
-  app = await buildApp(
+  app = await buildTestApp(
     env,
     {},
     {

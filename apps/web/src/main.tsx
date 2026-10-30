@@ -3,12 +3,17 @@ import { createRoot } from "react-dom/client";
 import "./i18n";
 import "./styles.css";
 import { App } from "./App";
+import { AuthGate, installFetchAuth } from "./auth";
+
+installFetchAuth();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root element");
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <AuthGate>
+      <App />
+    </AuthGate>
   </StrictMode>,
 );

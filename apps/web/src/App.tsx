@@ -11,6 +11,7 @@ import { WorkspacesView } from "./components/WorkspacesView";
 import { SettingsView } from "./components/SettingsView";
 import { Terminal } from "./components/Terminal";
 import { useLocale } from "./i18n";
+import { UserMenu } from "./auth";
 
 // Three.js is heavy: load the 3D office only when that view is opened.
 const Office3D = lazy(() => import("./components/Office3D").then((m) => ({ default: m.Office3D })));
@@ -144,6 +145,7 @@ export function App() {
           })}
         </nav>
         <LanguageSwitcher />
+        <UserMenu />
       </header>
 
       <main className={view === "office" ? "main main-office" : "main"}>

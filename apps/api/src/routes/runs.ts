@@ -12,11 +12,15 @@ import {
   type WorkerRole,
 } from "@infuture/worker";
 import { LOCAL_WORKSPACE_ID, type ConnectionStore } from "../connections/store";
+import { OFFICE_ZONE_KEYS } from "../offices/store";
 import type { RoleStore } from "../roles/store";
 import type { RunRecord, RunStore, TaskRecord } from "../runs/store";
+import type { WorkerStatusTracker } from "../system/workerStatus";
 
 export type RunRoutesOptions = {
   runStore: RunStore;
+  /** Tracks the in-process worker (busy/idle, heartbeat, errors) for /api/v1/system/metrics. */
+  workerStatus?: WorkerStatusTracker;
   connectionStore: ConnectionStore;
   roleStore?: RoleStore;
   masterKey: MasterKey | null;
@@ -31,6 +35,10 @@ const createRunSchema = z.object({
   role: z.string().trim().min(1).default("supervisor"),
   locale: z.enum(SUPPORTED_LOCALES).optional(),
   multiagent: z.boolean().default(false),
+  /** Optional attribution to the virtual office: which office, zone and character runs it. */
+  officeId: z.string().trim().min(1).max(120).optional(),
+  zone: z.enum(OFFICE_ZONE_KEYS).optional(),
+  characterId: z.string().trim().min(1).max(120).optional(),
 });
 
 const postBoardSchema = z.object({
@@ -66,6 +74,8 @@ const DEFAULT_MODELS: Record<string, string> = {
 export async function runRoutes(app: FastifyInstance, opts: RunRoutesOptions) {
   const { runStore, connectionStore, masterKey } = opts;
   const workspaceId = LOCAL_WORKSPACE_ID;
+  const trackWorker = <T>(fn: () => Promise<T>): Promise<T> =>
+    opts.workerStatus ? opts.workerStatus.track(fn) : fn();
 
   // Active in-flight approval resolvers
   const pendingApprovalResolvers = new Map<
@@ -580,47 +590,50 @@ export async function runRoutes(app: FastifyInstance, opts: RunRoutesOptions) {
 
     const continuationGoal = `Continuation and Operator Feedback for Run "${run.goal}":\n\nInstruction from human operator:\n"${prompt}"\n\n${lastOutput ? `Previous Deliverable Output:\n${lastOutput}` : ""}`;
 
-    const execution = await executeGoal({
-      workspaceId,
-      runId: run.id,
-      taskId: steerTaskId,
-      goal: continuationGoal,
-      locale,
-      worker: steerWorker,
-      systemPrompt: customPrompt,
-      tools: allowedTools,
-      onRequestApproval: async (req) => {
-        const approvalRecord = await runStore.createApproval({
-          id: req.approvalId,
-          runId: run.id,
-          taskId: steerTaskId,
-          action: req.action,
-          detail: req.detail,
-        });
-        opts.emit?.({
-          id: randomUUID(),
-          seq: 100,
-          ts: new Date().toISOString(),
-          workspaceId,
-          runId: run.id,
-          taskId: steerTaskId,
-          type: "approval.requested",
-          payload: {
-            approvalId: approvalRecord.id,
-            action: approvalRecord.action,
-            detail: approvalRecord.detail,
-          },
-        });
-        return new Promise((resolve) => {
-          pendingApprovalResolvers.set(approvalRecord.id, resolve);
-        });
-      },
-      onEvent: async (event) => {
-        await runStore.saveEvent(event);
-        opts.emit?.(event);
-      },
-      fetch: opts.fetch,
-    });
+    const execution = await trackWorker(() =>
+      executeGoal({
+        workspaceId,
+        runId: run.id,
+        taskId: steerTaskId,
+        goal: continuationGoal,
+        locale,
+        worker: steerWorker,
+        systemPrompt: customPrompt,
+        tools: allowedTools,
+        onRequestApproval: async (req) => {
+          const approvalRecord = await runStore.createApproval({
+            id: req.approvalId,
+            runId: run.id,
+            taskId: steerTaskId,
+            action: req.action,
+            detail: req.detail,
+          });
+          opts.emit?.({
+            id: randomUUID(),
+            seq: 100,
+            ts: new Date().toISOString(),
+            workspaceId,
+            runId: run.id,
+            taskId: steerTaskId,
+            type: "approval.requested",
+            payload: {
+              approvalId: approvalRecord.id,
+              action: approvalRecord.action,
+              detail: approvalRecord.detail,
+            },
+          });
+          return new Promise((resolve) => {
+            pendingApprovalResolvers.set(approvalRecord.id, resolve);
+          });
+        },
+        onEvent: async (event) => {
+          opts.workerStatus?.heartbeat();
+          await runStore.saveEvent(event);
+          opts.emit?.(event);
+        },
+        fetch: opts.fetch,
+      }),
+    );
 
     const separator =
       locale === "es" ? "Instrucción y ampliación del operador" : "Operator Steer & Continuation";
@@ -747,6 +760,9 @@ export async function runRoutes(app: FastifyInstance, opts: RunRoutesOptions) {
       workspaceId,
       goal: body.goal,
       locale,
+      officeId: body.officeId,
+      zone: body.zone,
+      characterId: body.characterId,
     });
 
     const defaultWorker: WorkerIdentity = {
@@ -802,20 +818,23 @@ export async function runRoutes(app: FastifyInstance, opts: RunRoutesOptions) {
         }
       }
 
-      const multiExecution = await executeMultiAgentRun({
-        workspaceId,
-        runId,
-        goal: body.goal,
-        locale,
-        defaultWorker,
-        workerPool,
-        customPrompts,
-        fetch: opts.fetch,
-        onEvent: async (event) => {
-          await runStore.saveEvent(event);
-          opts.emit?.(event);
-        },
-      });
+      const multiExecution = await trackWorker(() =>
+        executeMultiAgentRun({
+          workspaceId,
+          runId,
+          goal: body.goal,
+          locale,
+          defaultWorker,
+          workerPool,
+          customPrompts,
+          fetch: opts.fetch,
+          onEvent: async (event) => {
+            opts.workerStatus?.heartbeat();
+            await runStore.saveEvent(event);
+            opts.emit?.(event);
+          },
+        }),
+      );
 
       // Save each subtask to store
       for (const t of multiExecution.tasks) {
@@ -870,41 +889,44 @@ export async function runRoutes(app: FastifyInstance, opts: RunRoutesOptions) {
       title: body.goal,
     });
 
-    const execution = await executeGoal({
-      workspaceId,
-      runId,
-      taskId,
-      goal: body.goal,
-      locale,
-      worker: defaultWorker,
-      systemPrompt: customPrompt,
-      tools: allowedTools,
-      onRequestApproval: async (req) => {
-        await runStore.createApproval({
-          id: req.approvalId,
-          runId,
-          taskId,
-          action: req.action,
-          detail: req.detail,
-        });
-        await runStore.updateRun(runId, { status: "waiting_approval" });
+    const execution = await trackWorker(() =>
+      executeGoal({
+        workspaceId,
+        runId,
+        taskId,
+        goal: body.goal,
+        locale,
+        worker: defaultWorker,
+        systemPrompt: customPrompt,
+        tools: allowedTools,
+        onRequestApproval: async (req) => {
+          await runStore.createApproval({
+            id: req.approvalId,
+            runId,
+            taskId,
+            action: req.action,
+            detail: req.detail,
+          });
+          await runStore.updateRun(runId, { status: "waiting_approval" });
 
-        return new Promise((resolve) => {
-          pendingApprovalResolvers.set(req.approvalId, resolve);
-          setTimeout(() => {
-            if (pendingApprovalResolvers.has(req.approvalId)) {
-              pendingApprovalResolvers.delete(req.approvalId);
-              resolve({ decision: "approved", note: "Auto-approved after timeout" });
-            }
-          }, 300_000);
-        });
-      },
-      fetch: opts.fetch,
-      onEvent: async (event) => {
-        await runStore.saveEvent(event);
-        opts.emit?.(event);
-      },
-    });
+          return new Promise((resolve) => {
+            pendingApprovalResolvers.set(req.approvalId, resolve);
+            setTimeout(() => {
+              if (pendingApprovalResolvers.has(req.approvalId)) {
+                pendingApprovalResolvers.delete(req.approvalId);
+                resolve({ decision: "approved", note: "Auto-approved after timeout" });
+              }
+            }, 300_000);
+          });
+        },
+        fetch: opts.fetch,
+        onEvent: async (event) => {
+          opts.workerStatus?.heartbeat();
+          await runStore.saveEvent(event);
+          opts.emit?.(event);
+        },
+      }),
+    );
 
     // Clean secret from local memory
     secret = null;
@@ -930,6 +952,9 @@ export async function runRoutes(app: FastifyInstance, opts: RunRoutesOptions) {
       workspaceId,
       goal: createdRun.goal,
       locale,
+      officeId: createdRun.officeId,
+      zone: createdRun.zone,
+      characterId: createdRun.characterId,
       status: execution.status,
       output: execution.output,
       tokensIn: execution.tokensIn,

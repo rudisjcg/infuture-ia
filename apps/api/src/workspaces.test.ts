@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CCEvent } from "@infuture/events";
-import { buildApp } from "./app";
+import { buildTestApp as buildApp } from "./test-auth";
 import { loadEnv } from "./env";
 import { MemoryWorkspaceStore } from "./workspaces/store";
 
