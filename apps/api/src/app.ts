@@ -101,6 +101,7 @@ export async function buildApp(env: Env, options: FastifyServerOptions = {}, dep
     authStore: deps.authStore ?? new MemoryAuthStore(),
     apiToken: env.API_TOKEN,
     signupOpen: env.AUTH_SIGNUP_OPEN,
+    allowedOrigins: env.WEB_ORIGIN.split(",").map((origin) => origin.trim()),
     sessionTtlHours: env.AUTH_SESSION_TTL_HOURS,
     cookieSecure: env.AUTH_COOKIE_SECURE ?? env.NODE_ENV === "production",
   });

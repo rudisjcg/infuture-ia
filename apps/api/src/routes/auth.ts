@@ -30,6 +30,8 @@ export type AuthOptions = {
   signupOpen: boolean;
   sessionTtlHours: number;
   cookieSecure: boolean;
+  /** Browser origins allowed to use the session cookie (WEB_ORIGIN). Empty = no check. */
+  allowedOrigins?: string[];
 };
 
 /** Routes reachable without credentials. Everything else under /api/ needs a session or token. */
@@ -108,7 +110,12 @@ export async function authRoutes(app: FastifyInstance, opts: AuthOptions) {
       return resolveSession(bearer);
     }
     const cookie = readCookie(request.headers.cookie, SESSION_COOKIE);
-    return cookie ? resolveSession(cookie) : null;
+    if (!cookie) return null;
+    // The cookie is ambient, so a foreign page could ride it (notably on the realtime
+    // WebSocket, which CORS does not cover). Only honour it from allowed origins.
+    const origin = request.headers.origin;
+    if (origin && opts.allowedOrigins?.length && !opts.allowedOrigins.includes(origin)) return null;
+    return resolveSession(cookie);
   }
 
   app.decorateRequest("auth", null);
