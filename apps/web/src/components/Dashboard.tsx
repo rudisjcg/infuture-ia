@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { formatCurrency, formatDateTime, formatNumber } from "@infuture/i18n";
 import { eventLabelKey, type CCEvent, type EventType } from "@infuture/events";
 import { useLocale } from "../i18n";
+import { realtimeUrl } from "../realtime";
 
 type RoleId =
   | "supervisor"
@@ -184,14 +185,13 @@ export function Dashboard() {
 
   // WebSocket live connection
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/v1/realtime`;
-
     let ws: WebSocket | null = null;
+    let disposed = false;
     let pingInterval: number | undefined;
 
-    const connect = () => {
+    const connect = async () => {
+      const wsUrl = await realtimeUrl();
+      if (disposed) return;
       ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
@@ -255,9 +255,10 @@ export function Dashboard() {
       }, 25_000);
     };
 
-    connect();
+    void connect();
 
     return () => {
+      disposed = true;
       clearInterval(pingInterval);
       ws?.close();
     };

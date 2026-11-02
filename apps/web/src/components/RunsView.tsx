@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { formatCurrency, formatDateTime, formatNumber } from "@infuture/i18n";
 import { eventLabelKey, type CCEvent, type EventType } from "@infuture/events";
 import { useLocale } from "../i18n";
+import { realtimeUrl } from "../realtime";
 
 type RunStatus = "all" | "running" | "waiting_approval" | "done" | "failed" | "cancelled";
 
@@ -137,36 +138,44 @@ export function RunsView() {
 
   // Listen to WebSocket events live
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const ws = new WebSocket(`${protocol}//${host}/api/v1/realtime`);
+    let ws: WebSocket | null = null;
+    let disposed = false;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ op: "subscribe", topics: ["workspace"] }));
-    };
+    void realtimeUrl().then((url) => {
+      if (disposed) return;
+      ws = new WebSocket(url);
+      attach(ws);
+    });
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.op === "event" && msg.event) {
-          const ev = msg.event as CCEvent;
-          if (ev.runId === selectedRunId) {
-            setSelectedRunEvents((prev) => [...prev, ev]);
+    const attach = (ws: WebSocket) => {
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ op: "subscribe", topics: ["workspace"] }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.op === "event" && msg.event) {
+            const ev = msg.event as CCEvent;
+            if (ev.runId === selectedRunId) {
+              setSelectedRunEvents((prev) => [...prev, ev]);
+            }
+            if (ev.type === "approval.requested" || ev.type === "approval.resolved") {
+              void fetchRunsAndApprovals();
+            }
+            if (ev.type === "run.created" || ev.type === "run.completed") {
+              void fetchRunsAndApprovals();
+            }
           }
-          if (ev.type === "approval.requested" || ev.type === "approval.resolved") {
-            void fetchRunsAndApprovals();
-          }
-          if (ev.type === "run.created" || ev.type === "run.completed") {
-            void fetchRunsAndApprovals();
-          }
+        } catch {
+          // Ignore parse errors
         }
-      } catch {
-        // Ignore parse errors
-      }
+      };
     };
 
     return () => {
-      ws.close();
+      disposed = true;
+      ws?.close();
     };
   }, [selectedRunId, fetchRunsAndApprovals]);
 

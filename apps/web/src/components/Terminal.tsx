@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { formatCurrency, formatNumber } from "@infuture/i18n";
 import type { CCEvent } from "@infuture/events";
 import { useLocale } from "../i18n";
+import { realtimeUrl } from "../realtime";
 
 type TerminalLineKind =
   | "input"
@@ -270,13 +271,12 @@ export function Terminal() {
 
   // WebSocket live connection to stream agent events into terminal
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/v1/realtime`;
-
     let ws: WebSocket | null = null;
+    let disposed = false;
 
-    const connect = () => {
+    const connect = async () => {
+      const wsUrl = await realtimeUrl();
+      if (disposed) return;
       ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
@@ -309,7 +309,7 @@ export function Terminal() {
       };
     };
 
-    connect();
+    void connect();
 
     const pingTimer = window.setInterval(() => {
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -318,6 +318,7 @@ export function Terminal() {
     }, 15000);
 
     return () => {
+      disposed = true;
       clearInterval(pingTimer);
       if (ws) {
         ws.close();

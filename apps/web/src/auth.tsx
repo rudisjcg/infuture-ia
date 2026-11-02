@@ -155,6 +155,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => Promise<void> }) {
         <LanguageSwitcher />
       </div>
       <section className="card auth-card" aria-labelledby="auth-title">
+        <img className="auth-logo" src="/icon-192.png" width="72" height="72" alt="" />
         <p className="eyebrow mono">{t("app.name")}</p>
         <h1 id="auth-title">{title}</h1>
         {status?.needsSetup && <p className="muted">{t("auth.setupHint")}</p>}

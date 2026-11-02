@@ -3151,3 +3151,14 @@ body:has(.main-office) {
   gap: 8px;
   font-size: 13px;
 }
+
+.brand-logo {
+  display: block;
+  border-radius: 7px;
+}
+
+.auth-logo {
+  display: block;
+  margin: 0 auto 12px;
+  border-radius: 16px;
+}
