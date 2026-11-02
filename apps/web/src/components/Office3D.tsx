@@ -29,6 +29,7 @@ import "./Office3D.css";
 import {
   ALL_ZONE_KEYS,
   CHARACTER_TEMPLATES,
+  newCharacterId,
   ZONE_LAYOUT,
   type CharLive,
   type CharSummary,
@@ -779,7 +780,8 @@ function createEngine(
   scene.add(pathLineMesh);
 
   // ---------------------------------------------------------------- characters
-  const summaries = () => characters.map(({ id, name, roleKey, color }) => ({ id, name, roleKey, color }));
+  const summaries = () =>
+    characters.map(({ id, charId, name, roleKey, color }) => ({ id, charId, name, roleKey, color }));
 
   function createCharacterInstance(template: Template, startX: number, startZ: number) {
     const id = characters.length;
@@ -823,6 +825,7 @@ function createEngine(
 
     const c: Character = {
       id,
+      charId: template.id ?? newCharacterId(),
       name: template.name,
       roleKey: template.roleKey,
       color: template.color,
@@ -1373,6 +1376,7 @@ function createEngine(
     snapshot: () =>
       characters.map((c) => ({
         id: c.id,
+        charId: c.charId,
         name: c.name,
         roleKey: c.roleKey,
         color: c.color,
@@ -1386,13 +1390,13 @@ function createEngine(
       const randomX = parseFloat(((Math.random() - 0.5) * 6).toFixed(1));
       const randomZ = parseFloat(((Math.random() - 0.5) * 6).toFixed(1));
       const c = createCharacterInstance(
-        { ...template, name: `${template.name} #${characters.length + 1}` },
+        { ...template, id: newCharacterId(), name: `${template.name} #${characters.length + 1}` },
         randomX,
         randomZ,
       );
       cb.onCharacters(summaries());
       selectCharacter(c.id);
-      return { ...template, name: c.name };
+      return { ...template, id: c.charId, name: c.name };
     },
     sendToZone(key) {
       const zone = OFFICE_ZONES[key];

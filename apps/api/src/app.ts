@@ -96,10 +96,13 @@ export async function buildApp(env: Env, options: FastifyServerOptions = {}, dep
     });
   });
 
-  // Auth hook first: every /api/ route except the public ones needs a session or API_TOKEN.
+  const workspaceStore = deps.workspaceStore ?? new MemoryWorkspaceStore();
+
+  // Auth hook first: every /api/ route except the public ones needs a session or token, and a role.
   await app.register(authRoutes, {
     authStore: deps.authStore ?? new MemoryAuthStore(),
     apiToken: env.API_TOKEN,
+    verifyApiToken: (raw) => workspaceStore.verifyToken(raw),
     signupOpen: env.AUTH_SIGNUP_OPEN,
     allowedOrigins: env.WEB_ORIGIN.split(",").map((origin) => origin.trim()),
     sessionTtlHours: env.AUTH_SESSION_TTL_HOURS,
@@ -117,7 +120,6 @@ export async function buildApp(env: Env, options: FastifyServerOptions = {}, dep
   const scheduleStore = deps.scheduleStore ?? new MemoryScheduleStore();
   const mcpStore = deps.mcpStore ?? new MemoryMcpServerStore();
   const knowledgeStore = deps.knowledgeStore ?? new MemoryKnowledgeStore();
-  const workspaceStore = deps.workspaceStore ?? new MemoryWorkspaceStore();
   const hub = deps.hub ?? new RealtimeHub(runStore);
 
   const resolvedMasterKey =

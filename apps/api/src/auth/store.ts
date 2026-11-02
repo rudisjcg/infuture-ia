@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import type { Database, schema } from "@infuture/db";
 import { LOCAL_WORKSPACE_ID } from "../connections/store";
 
@@ -10,7 +10,8 @@ export type UserRecord = {
   email: string;
   displayName: string | null;
   locale: string;
-  role: UserRole;
+  /** Role in the local workspace; null when the user has no membership (denied everywhere). */
+  role: UserRole | null;
   createdAt: Date;
 };
 
@@ -19,12 +20,46 @@ export type NewUser = {
   displayName: string | null;
   locale: string;
   passwordHash: string;
-  role: UserRole;
 };
+
+/**
+ * Sign-up policy, applied atomically with the insert so two concurrent requests can never both
+ * become the first owner.
+ */
+export type SignupPolicy = {
+  /** The caller may create the very first (owner) account. */
+  allowFirst: boolean;
+  /** Accounts after the first are allowed (AUTH_SIGNUP_OPEN). */
+  allowMore: boolean;
+  /** Role for accounts after the first. */
+  laterRole: UserRole;
+};
+
+export class SetupForbiddenError extends Error {
+  constructor() {
+    super("setup_forbidden");
+  }
+}
+
+export class SignupClosedError extends Error {
+  constructor() {
+    super("signup_closed");
+  }
+}
+
+function resolveSignupRole(existingUsers: number, policy: SignupPolicy): UserRole {
+  if (existingUsers === 0) {
+    if (!policy.allowFirst) throw new SetupForbiddenError();
+    return "owner";
+  }
+  if (!policy.allowMore) throw new SignupClosedError();
+  return policy.laterRole;
+}
 
 export interface AuthStore {
   countUsers(): Promise<number>;
-  createUser(input: NewUser): Promise<UserRecord>;
+  /** Creates a user under `policy`: owner when it is the first account, else `laterRole`. */
+  registerUser(input: NewUser, policy: SignupPolicy): Promise<UserRecord>;
   findByEmail(email: string): Promise<{ user: UserRecord; passwordHash: string | null } | undefined>;
   getUser(id: string): Promise<UserRecord | undefined>;
   createSession(id: string, userId: string, expiresAt: Date): Promise<void>;
@@ -84,19 +119,27 @@ export class MemoryAuthStore implements AuthStore {
   private users = new Map<string, { user: UserRecord; passwordHash: string | null }>();
   private sessions = new Map<string, { userId: string; expiresAt: Date }>();
 
+  /** Changes (or removes, with null) a user's local-workspace role. Used by tests and tooling. */
+  setRole(userId: string, role: UserRole | null) {
+    const entry = this.users.get(userId);
+    if (entry) entry.user = { ...entry.user, role };
+  }
+
   async countUsers() {
     return this.users.size;
   }
 
-  async createUser(input: NewUser) {
+  // No await in here: the count, the checks and the insert cannot interleave with another request.
+  async registerUser(input: NewUser, policy: SignupPolicy) {
     const email = normalizeEmail(input.email);
+    const role = resolveSignupRole(this.users.size, policy);
     if ([...this.users.values()].some((u) => u.user.email === email)) throw new EmailTakenError();
     const user: UserRecord = {
       id: randomUUID(),
       email,
       displayName: input.displayName,
       locale: input.locale,
-      role: input.role,
+      role,
       createdAt: new Date(),
     };
     this.users.set(user.id, { user, passwordHash: input.passwordHash });
@@ -142,10 +185,14 @@ export class PgAuthStore implements AuthStore {
     return Number(row?.n ?? 0);
   }
 
-  async createUser(input: NewUser) {
+  async registerUser(input: NewUser, policy: SignupPolicy) {
     const { users, memberships, workspaces } = this.s;
     const email = normalizeEmail(input.email);
     return this.db.transaction(async (tx) => {
+      // Serialise sign-ups: count and insert run under one transaction-scoped advisory lock.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('infuture:signup'))`);
+      const [counted] = await tx.select({ n: count() }).from(users);
+      const role = resolveSignupRole(Number(counted?.n ?? 0), policy);
       const existing = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
       if (existing.length > 0) throw new EmailTakenError();
       await tx.insert(workspaces).values({ id: LOCAL_WORKSPACE_ID, name: "Local" }).onConflictDoNothing();
@@ -155,13 +202,13 @@ export class PgAuthStore implements AuthStore {
         .insert(users)
         .values({ id, email, displayName: input.displayName, locale, passwordHash: input.passwordHash })
         .returning();
-      await tx.insert(memberships).values({ workspaceId: LOCAL_WORKSPACE_ID, userId: id, role: input.role });
+      await tx.insert(memberships).values({ workspaceId: LOCAL_WORKSPACE_ID, userId: id, role });
       return {
         id,
         email,
         displayName: row?.displayName ?? null,
         locale,
-        role: input.role,
+        role,
         createdAt: row?.createdAt ?? new Date(),
       };
     });
@@ -178,7 +225,8 @@ export class PgAuthStore implements AuthStore {
       email: row.email,
       displayName: row.displayName,
       locale: row.locale,
-      role: m?.role ?? "viewer",
+      // No membership means no access: never fall back to a default role.
+      role: m?.role ?? null,
       createdAt: row.createdAt,
     };
   }

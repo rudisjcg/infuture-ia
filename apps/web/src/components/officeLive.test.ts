@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CHARACTER_TEMPLATES, withCharacterIds } from "./officeModel";
 import {
   assignTasks,
   completedFor,
@@ -129,6 +130,29 @@ describe("assignTasks (explicit attribution)", () => {
     const tasks = assignTasks(true, runs, {}, "o1", chars);
     expect(tasks.map((t) => (t.kind === "run" ? t.runId : t.kind))).toEqual(["old", "new", "mine"]);
   });
+  it("attributes by stable character id, surviving reorders", () => {
+    const stable = [
+      { id: 0, charId: "ch-b", roleKey: "ux", zone: "dev" },
+      { id: 1, charId: "ch-a", roleKey: "qa", zone: "dev" },
+    ];
+    const runs = [a("for-a", "2026-01-01T00:00:00Z", { officeId: "o1", characterId: "ch-a" })];
+    const tasks = assignTasks(true, runs, {}, "o1", stable);
+    expect(tasks.map((t) => (t.kind === "run" ? t.runId : t.kind))).toEqual(["idle", "for-a"]);
+  });
+  it("matches legacy index-based runs when no character has that id", () => {
+    const stable = [
+      { id: 0, charId: "ch-x", roleKey: "ux", zone: "dev" },
+      { id: 1, charId: "0", roleKey: "qa", zone: "dev" },
+      { id: 2, charId: "ch-y", roleKey: "qa", zone: "dev" },
+    ];
+    const runs = [
+      a("legacy-0", "2026-01-01T00:00:00Z", { officeId: "o1", characterId: "0" }),
+      a("legacy-2", "2026-01-02T00:00:00Z", { officeId: "o1", characterId: "2" }),
+    ];
+    const tasks = assignTasks(true, runs, {}, "o1", stable);
+    // "0" is now a stable id (backfilled character moved to index 1); "2" falls back to the index.
+    expect(tasks.map((t) => (t.kind === "run" ? t.runId : t.kind))).toEqual(["idle", "legacy-0", "legacy-2"]);
+  });
   it("returns demo/idle offline", () => {
     expect(assignTasks(false, [], {}, "o1", chars).map((t) => t.kind)).toEqual(["demo", "demo", "idle"]);
   });
@@ -153,5 +177,19 @@ describe("completedFromRuns", () => {
     const done = [d("1", { officeId: "o1", zone: "dev" }), d("2"), d("3"), d("4"), d("5")];
     expect(completedFromRuns(done, "o1", "dev", 2, 4)).toEqual({ value: 3, estimate: true });
     expect(completedFromRuns(done, "o1", null, 2, 4)).toEqual({ value: 5, estimate: false });
+  });
+});
+
+describe("withCharacterIds", () => {
+  const tpl = CHARACTER_TEMPLATES[0]!;
+  it("backfills legacy characters with their index and keeps existing ids", () => {
+    const out = withCharacterIds([tpl, { ...tpl, id: "ch-keep" }, tpl], String);
+    expect(out.map((c) => c.id)).toEqual(["0", "ch-keep", "2"]);
+  });
+  it("generates unique random ids and replaces duplicates", () => {
+    const out = withCharacterIds([tpl, { ...tpl, id: "dup" }, { ...tpl, id: "dup" }]);
+    expect(out[0]?.id).toMatch(/^ch-[0-9a-f]{10}$/);
+    expect(out[1]?.id).toBe("dup");
+    expect(new Set(out.map((c) => c.id)).size).toBe(3);
   });
 });

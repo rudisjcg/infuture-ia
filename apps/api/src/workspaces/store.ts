@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Database, schema } from "@infuture/db";
 import { LOCAL_WORKSPACE_ID } from "../connections/store";
@@ -180,9 +180,10 @@ export class MemoryWorkspaceStore implements WorkspaceStore {
   }
 
   async verifyToken(rawToken: string): Promise<ApiTokenRecord | undefined> {
-    const hash = hashToken(rawToken);
+    const hash = Buffer.from(hashToken(rawToken));
     for (const token of this.tokens.values()) {
-      if (token.tokenHash === hash && !token.revokedAt) {
+      const stored = Buffer.from(token.tokenHash);
+      if (stored.length === hash.length && timingSafeEqual(stored, hash) && !token.revokedAt) {
         if (token.expiresAt && token.expiresAt.getTime() < Date.now()) {
           return undefined;
         }

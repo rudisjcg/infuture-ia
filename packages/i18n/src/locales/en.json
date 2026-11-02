@@ -196,7 +196,13 @@
     "authRequired": "Sign in to continue (session cookie or Authorization: Bearer token).",
     "invalidCredentials": "Wrong e-mail or password.",
     "signupClosed": "Sign-up is closed. Ask the workspace owner for an account.",
-    "emailTaken": "An account with that e-mail already exists."
+    "emailTaken": "An account with that e-mail already exists.",
+    "forbiddenRole": "Your role ({{role}}) cannot do this; it needs {{needed}} or higher.",
+    "noMembership": "Your account has no role in this workspace. Ask an owner or admin to add you.",
+    "workspaceMismatch": "This API token belongs to another workspace.",
+    "setupNeedsToken": "Creating the first (owner) account needs the API_TOKEN: send Authorization: Bearer <API_TOKEN>.",
+    "setupNeedsLoopback": "Creating the first (owner) account is only allowed from this machine (localhost) while API_TOKEN is not set.",
+    "tooManyAttempts": "Too many failed sign-in attempts. Try again in {{seconds}} s."
   },
   "auth": {
     "loginTitle": "Sign in",
@@ -215,7 +221,10 @@
     "signedInAs": "Signed in as {{name}}",
     "serviceToken": "API token",
     "checking": "Checking session…",
-    "failed": "Could not complete the request. Try again."
+    "failed": "Could not complete the request. Try again.",
+    "setupToken": "Setup token (API_TOKEN)",
+    "setupTokenHint": "The server has API_TOKEN set. Paste it here to create the owner account; it is only sent once and not stored.",
+    "setupLoopbackHint": "No API_TOKEN is set, so the owner account can only be created from the server itself (open the app on localhost)."
   },
   "connections": {
     "title": "Connections",

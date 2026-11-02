@@ -6,6 +6,11 @@ import { OFFICE_ACCESSORIES, OFFICE_ZONE_KEYS, type OfficeRecord, type OfficeSto
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
 const characterSchema = z.object({
+  id: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    .optional(),
   name: z.string().trim().min(1).max(60),
   roleKey: z.string().trim().min(1).max(40),
   color: hex,

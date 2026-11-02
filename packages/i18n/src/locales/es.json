@@ -196,7 +196,13 @@
     "authRequired": "Inicia sesión para continuar (cookie de sesión o Authorization: Bearer token).",
     "invalidCredentials": "Correo o contraseña incorrectos.",
     "signupClosed": "El registro está cerrado. Pide una cuenta al propietario del espacio.",
-    "emailTaken": "Ya existe una cuenta con ese correo."
+    "emailTaken": "Ya existe una cuenta con ese correo.",
+    "forbiddenRole": "Tu rol ({{role}}) no puede hacer esto; se necesita {{needed}} o superior.",
+    "noMembership": "Tu cuenta no tiene rol en este espacio de trabajo. Pide a un propietario o administrador que te añada.",
+    "workspaceMismatch": "Este token de API pertenece a otro espacio de trabajo.",
+    "setupNeedsToken": "Crear la primera cuenta (propietario) requiere el API_TOKEN: envía Authorization: Bearer <API_TOKEN>.",
+    "setupNeedsLoopback": "Sin API_TOKEN configurado, la primera cuenta (propietario) solo puede crearse desde esta máquina (localhost).",
+    "tooManyAttempts": "Demasiados intentos fallidos de inicio de sesión. Vuelve a intentarlo en {{seconds}} s."
   },
   "auth": {
     "loginTitle": "Iniciar sesión",
@@ -215,7 +221,10 @@
     "signedInAs": "Sesión iniciada como {{name}}",
     "serviceToken": "Token de API",
     "checking": "Comprobando sesión…",
-    "failed": "No se pudo completar la solicitud. Inténtalo de nuevo."
+    "failed": "No se pudo completar la solicitud. Inténtalo de nuevo.",
+    "setupToken": "Token de configuración (API_TOKEN)",
+    "setupTokenHint": "El servidor tiene API_TOKEN definido. Pégalo aquí para crear la cuenta del propietario; solo se envía una vez y no se guarda.",
+    "setupLoopbackHint": "No hay API_TOKEN definido, así que la cuenta del propietario solo puede crearse desde el propio servidor (abre la app en localhost)."
   },
   "connections": {
     "title": "Conexiones",
