@@ -109,21 +109,7 @@ export function App() {
     <div className="shell">
       <header className="topbar">
         <a className="brand" href="#dashboard" onClick={() => navigateTo("dashboard")}>
-          <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-            <rect
-              x="1"
-              y="1"
-              width="24"
-              height="24"
-              rx="7"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            />
-            <circle cx="13" cy="9" r="3" fill="var(--accent)" />
-            <circle cx="7.5" cy="18" r="2.5" fill="currentColor" />
-            <circle cx="18.5" cy="18" r="2.5" fill="currentColor" />
-          </svg>
+          <img className="brand-logo" src="/logo-64.png" width="28" height="28" alt="" />
           {t("app.name")}
         </a>
         <nav aria-label={t("nav.main")} className="nav">

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { TranslationKey } from "@infuture/i18n";
 import {
@@ -61,7 +61,15 @@ const isPublic = (path: string) =>
   !path.startsWith("/api/") || PUBLIC_ROUTES.has(path) || path.startsWith("/api/v1/i18n/");
 
 /** Routes any authenticated caller may use regardless of role (so the UI can show "no access"). */
-const ANY_ROLE_ROUTES = new Set(["/api/v1/auth/me"]);
+const ANY_ROLE_ROUTES = new Set(["/api/v1/auth/me", "/api/v1/realtime/ticket"]);
+
+/**
+ * The realtime WebSocket may live on another host than the web app (e.g. Render static sites
+ * cannot proxy WebSockets), where the session cookie is not sent. The web app first asks for a
+ * short-lived, single-use ticket over HTTP (same origin, cookie auth) and passes it as `?ticket=`.
+ */
+const REALTIME_ROUTE = "/api/v1/realtime";
+const TICKET_TTL_MS = 30_000;
 
 /** Routes that read the workspace from X-Workspace-Id; the rest only serve the local workspace. */
 const WORKSPACE_AWARE = ["/api/v1/tokens", "/api/v1/webhooks"];
@@ -141,7 +149,25 @@ export async function authRoutes(app: FastifyInstance, opts: AuthOptions) {
     );
   };
 
+  const tickets = new Map<string, { auth: AuthContext; expiresAt: number }>();
+
+  /** Consumes a realtime ticket (single use) when the request is the WebSocket upgrade. */
+  function ticketAuth(request: FastifyRequest): AuthContext | null {
+    if (request.routeOptions.url !== REALTIME_ROUTE) return null;
+    const ticket = (request.query as { ticket?: unknown } | undefined)?.ticket;
+    if (typeof ticket !== "string" || !ticket) return null;
+    const entry = tickets.get(ticket);
+    tickets.delete(ticket);
+    if (!entry || entry.expiresAt < Date.now()) return null;
+    // Tickets are only handed to the web app, so the socket must come from an allowed origin.
+    const origin = request.headers.origin;
+    if (opts.allowedOrigins?.length && (!origin || !opts.allowedOrigins.includes(origin))) return null;
+    return entry.auth;
+  }
+
   async function authenticate(request: FastifyRequest): Promise<AuthContext | null> {
+    const fromTicket = ticketAuth(request);
+    if (fromTicket) return fromTicket;
     const header = request.headers.authorization;
     if (header?.startsWith("Bearer ")) {
       const bearer = header.slice(7).trim();
@@ -322,6 +348,14 @@ export async function authRoutes(app: FastifyInstance, opts: AuthOptions) {
       return { kind: "apiToken", user: null, role: auth.role, workspaceId: auth.workspaceId };
     }
     return { kind: "token", user: null };
+  });
+
+  app.post("/api/v1/realtime/ticket", async (request) => {
+    const now = Date.now();
+    for (const [key, entry] of tickets) if (entry.expiresAt < now) tickets.delete(key);
+    const ticket = randomBytes(24).toString("base64url");
+    tickets.set(ticket, { auth: request.auth as AuthContext, expiresAt: now + TICKET_TTL_MS });
+    return { ticket, expiresInSec: TICKET_TTL_MS / 1000 };
   });
 }
 

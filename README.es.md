@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/mockups/icon.png" width="128" height="128" alt="infuture IA" /></p>
+
 # infuture IA
 
 [English](README.md) · **Español**

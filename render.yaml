@@ -49,6 +49,9 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Render no hace proxy de WebSockets en static sites: el tiempo real va directo a la API.
+      - key: VITE_REALTIME_URL
+        value: wss://infuture-api.onrender.com/api/v1/realtime
     routes:
       # Misma origen para web y API: la cookie de sesión SameSite=Lax funciona.
       # Si Render asigna otra URL a la API, cámbiala aquí.
