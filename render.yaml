@@ -1,0 +1,57 @@
+# Render Blueprint: API (Node) + web (static) + PostgreSQL.
+# Render → New → Blueprint → elige este repo. Los valores con `sync: false`
+# se piden en el panel la primera vez (no se guardan en el repo).
+
+databases:
+  - name: infuture-db
+    plan: free
+    databaseName: infuture
+    user: infuture
+
+services:
+  - type: web
+    name: infuture-api
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@infuture/api && pnpm db:migrate
+    startCommand: API_HOST=0.0.0.0 API_PORT=$PORT node apps/api/dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DEFAULT_LOCALE
+        value: es
+      - key: AUTH_SIGNUP_OPEN
+        value: "false"
+      - key: AUTH_SESSION_TTL_HOURS
+        value: "168"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: infuture-db
+          property: connectionString
+      # URL pública del static site (p. ej. https://infuture-web.onrender.com).
+      - key: WEB_ORIGIN
+        sync: false
+      # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      - key: API_TOKEN
+        sync: false
+      # pnpm vault:key — guárdala: sin ella no se pueden leer las credenciales guardadas.
+      - key: INFUTURE_MASTER_KEY
+        sync: false
+
+  - type: web
+    name: infuture-web
+    runtime: static
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@infuture/web
+    staticPublishPath: apps/web/dist
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+    routes:
+      # Misma origen para web y API: la cookie de sesión SameSite=Lax funciona.
+      # Si Render asigna otra URL a la API, cámbiala aquí.
+      - type: rewrite
+        source: /api/*
+        destination: https://infuture-api.onrender.com/api/*
