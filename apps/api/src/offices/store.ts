@@ -11,6 +11,12 @@ export const OFFICE_ACCESSORIES = ["glasses", "headphones", "cap", "badge"] as c
 export type OfficeAccessory = (typeof OFFICE_ACCESSORIES)[number];
 
 export type OfficeCharacter = {
+  /**
+   * Stable id used for run attribution (survives reordering). Characters stored before ids
+   * existed are backfilled with their original index ("0", "1", ...) so runs attributed by
+   * index keep pointing at the same character.
+   */
+  id: string;
   name: string;
   roleKey: string;
   color: string;
@@ -36,12 +42,39 @@ export type OfficeRecord = {
 
 export type ZoneCapacity = Partial<Record<OfficeZoneKey, number>>;
 
+/** A character as sent by clients: the id is optional and generated when missing. */
+export type OfficeCharacterInput = Omit<OfficeCharacter, "id"> & { id?: string };
+
 export type OfficeInput = Omit<
   OfficeRecord,
-  "id" | "workspaceId" | "createdAt" | "isDefault" | "zoneCapacity"
+  "id" | "workspaceId" | "createdAt" | "isDefault" | "zoneCapacity" | "characters"
 > & {
+  characters: OfficeCharacterInput[];
   zoneCapacity?: ZoneCapacity;
 };
+
+/** New random character id, e.g. "ch-1a2b3c4d5e". */
+export const newCharacterId = () => `ch-${randomUUID().replace(/-/g, "").slice(0, 10)}`;
+
+/**
+ * Gives every character a unique stable id. Missing ids get `fallback(index)` (legacy index for
+ * stored data, a random id for client input); duplicates are replaced with a random id.
+ */
+export function withCharacterIds<T extends object>(
+  chars: T[],
+  fallback: (index: number) => string = () => newCharacterId(),
+): (T & { id: string })[] {
+  const seen = new Set<string>();
+  return chars.map((c, i) => {
+    const own = (c as { id?: unknown }).id;
+    let id = typeof own === "string" && own.length > 0 ? own : fallback(i);
+    while (seen.has(id)) id = newCharacterId();
+    seen.add(id);
+    return { ...c, id };
+  });
+}
+
+const legacyIndexId = (i: number) => String(i);
 
 /** Keeps only known zones with positive integer capacities. */
 export function cleanZoneCapacity(raw: unknown): ZoneCapacity {
@@ -71,6 +104,7 @@ export const DEFAULT_OFFICE_ID = "office-hq";
 
 export const DEFAULT_OFFICE_CHARACTERS: OfficeCharacter[] = [
   {
+    id: "0",
     name: "Carlos",
     roleKey: "fullstack",
     color: "#6366f1",
@@ -80,6 +114,7 @@ export const DEFAULT_OFFICE_CHARACTERS: OfficeCharacter[] = [
     accessory: "glasses",
   },
   {
+    id: "1",
     name: "Sofía",
     roleKey: "ux",
     color: "#ec4899",
@@ -89,6 +124,7 @@ export const DEFAULT_OFFICE_CHARACTERS: OfficeCharacter[] = [
     accessory: "headphones",
   },
   {
+    id: "2",
     name: "Mateo",
     roleKey: "sre",
     color: "#10b981",
@@ -98,6 +134,7 @@ export const DEFAULT_OFFICE_CHARACTERS: OfficeCharacter[] = [
     accessory: "cap",
   },
   {
+    id: "3",
     name: "Elena",
     roleKey: "product",
     color: "#f59e0b",
@@ -141,6 +178,7 @@ export class MemoryOfficeStore implements OfficeStore {
   async createOffice(workspaceId: string, input: OfficeInput) {
     const record: OfficeRecord = {
       ...input,
+      characters: withCharacterIds(input.characters),
       zoneCapacity: cleanZoneCapacity(input.zoneCapacity),
       id: `office-${randomUUID()}`,
       workspaceId,
@@ -156,6 +194,7 @@ export class MemoryOfficeStore implements OfficeStore {
     if (!current) return undefined;
     const defined = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
     const updated: OfficeRecord = { ...current, ...defined } as OfficeRecord;
+    if (updates.characters !== undefined) updated.characters = withCharacterIds(updates.characters);
     if (updates.zoneCapacity !== undefined) updated.zoneCapacity = cleanZoneCapacity(updates.zoneCapacity);
     this.offices.set(id, updated);
     return updated;
@@ -178,7 +217,10 @@ const toRecord = (r: OfficeRow): OfficeRecord => ({
   name: r.name,
   theme: r.theme,
   zones: r.zones.filter((z): z is OfficeZoneKey => (OFFICE_ZONE_KEYS as readonly string[]).includes(z)),
-  characters: Array.isArray(r.characters) ? (r.characters as OfficeCharacter[]) : [],
+  characters: withCharacterIds(
+    Array.isArray(r.characters) ? (r.characters as OfficeCharacterInput[]) : [],
+    legacyIndexId,
+  ),
   zoneCapacity: cleanZoneCapacity(r.zoneCapacity),
   isDefault: r.isDefault,
   createdAt: r.createdAt,
@@ -244,7 +286,7 @@ export class PgOfficeStore implements OfficeStore {
         name: input.name,
         theme: input.theme,
         zones: input.zones,
-        characters: input.characters,
+        characters: withCharacterIds(input.characters),
         zoneCapacity: cleanZoneCapacity(input.zoneCapacity),
         isDefault: false,
       })
@@ -260,7 +302,7 @@ export class PgOfficeStore implements OfficeStore {
     if (updates.name !== undefined) set.name = updates.name;
     if (updates.theme !== undefined) set.theme = updates.theme;
     if (updates.zones !== undefined) set.zones = updates.zones;
-    if (updates.characters !== undefined) set.characters = updates.characters;
+    if (updates.characters !== undefined) set.characters = withCharacterIds(updates.characters);
     if (updates.zoneCapacity !== undefined) set.zoneCapacity = cleanZoneCapacity(updates.zoneCapacity);
     if (Object.keys(set).length === 0) return current;
     const { offices } = this.s;

@@ -19,10 +19,21 @@ corepack enable
 pnpm install
 cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
 pnpm vault:key                # pega la línea que imprime en .env
+node -e "console.log('API_TOKEN=' + require('crypto').randomBytes(32).toString('hex'))"  # pégalo en .env
 docker compose up -d          # PostgreSQL y Redis
 pnpm db:migrate               # crea las tablas
 pnpm dev                      # API en :4000, web en :5173
 ```
+
+### Token de la API (obligatorio)
+
+Define siempre `API_TOKEN` en `.env` (mínimo 16 caracteres; el comando de arriba genera uno aleatorio). Sirve para:
+
+- **Crear la primera cuenta (propietaria).** En la pantalla de configuración, pega el `API_TOKEN` en el campo "Token de configuración". Sin `API_TOKEN`, la primera cuenta solo se puede crear desde la propia máquina de la API (loopback), lo cual no es seguro detrás de un proxy inverso.
+- **Acceso de administración/servicio** desde scripts y la terminal: `Authorization: Bearer <API_TOKEN>` funciona en todas las rutas `/api/v1`.
+- **Herramientas de código personalizadas** cuando la API no escucha en loopback.
+
+Mantenlo en secreto: nunca subas `.env` ni expongas el token en la web.
 
 Abre http://localhost:5173 y cambia entre **English** y **Español** en la barra superior. Añade `?lang=es` a cualquier URL para abrirla en español.
 

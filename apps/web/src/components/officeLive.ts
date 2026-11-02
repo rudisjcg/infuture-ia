@@ -118,7 +118,7 @@ export function assignTasks(
   runs: Run[],
   steps: Record<string, string>,
   officeId: string,
-  chars: { id: number; roleKey: string; zone: string }[],
+  chars: { id: number; charId?: string; roleKey: string; zone: string }[],
 ): CharTask[] {
   if (!apiOk)
     return chars.map((c) => (c.zone === "coffee" ? { kind: "idle" } : { kind: "demo", roleKey: c.roleKey }));
@@ -131,8 +131,14 @@ export function assignTasks(
     goal: r.goal,
     step: steps[r.id] ?? null,
   });
+  const stableIds = new Set(chars.map((c) => c.charId ?? String(c.id)));
+  // Runs created before stable ids stored the character index ("0", "1", ...): when no
+  // character has that id, fall back to matching the index.
+  const matches = (r: Run, c: (typeof chars)[number]) =>
+    r.characterId === (c.charId ?? String(c.id)) ||
+    (r.characterId === String(c.id) && !stableIds.has(r.characterId));
   const explicit = chars.map((c) =>
-    active.find((r) => r.characterId === String(c.id) && (r.officeId ?? officeId) === officeId),
+    active.find((r) => matches(r, c) && (r.officeId ?? officeId) === officeId),
   );
   const pool = active.filter((r) => !r.characterId && (!r.officeId || r.officeId === officeId));
   let next = 0;

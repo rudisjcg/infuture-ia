@@ -5,6 +5,7 @@ import { Buildings, ChartBar, HardDrives, Trash, UsersThree, X } from "@phosphor
 import {
   ALL_ZONE_KEYS,
   CHARACTER_TEMPLATES,
+  withCharacterIds,
   ZONE_LAYOUT,
   type CharLive,
   type OfficeConfig,
@@ -47,7 +48,7 @@ export const defaultOffice = (): OfficeConfig => ({
   name: "HQ",
   theme: "#6366f1",
   zones: [...ALL_ZONE_KEYS],
-  characters: CHARACTER_TEMPLATES.slice(0, 4),
+  characters: withCharacterIds(CHARACTER_TEMPLATES.slice(0, 4), String),
   isDefault: true,
 });
 
@@ -59,7 +60,7 @@ const toConfig = (o: ApiOffice): OfficeConfig => ({
   theme: o.theme,
   isDefault: o.isDefault,
   zones: o.zones.filter((z): z is ZoneKey => (ALL_ZONE_KEYS as string[]).includes(z)),
-  characters: o.characters,
+  characters: withCharacterIds(o.characters ?? [], String),
   zoneCapacity: o.zoneCapacity ?? {},
 });
 
@@ -111,7 +112,12 @@ export async function createOffice(
       // Fall through to local storage.
     }
   }
-  const office: OfficeConfig = { ...input, id: `office-local-${Date.now().toString(36)}`, isDefault: false };
+  const office: OfficeConfig = {
+    ...input,
+    characters: withCharacterIds(input.characters),
+    id: `office-local-${Date.now().toString(36)}`,
+    isDefault: false,
+  };
   writeLocal([...current.filter((o) => o.id !== office.id), office]);
   return { office, source: "local" };
 }
@@ -139,7 +145,11 @@ export async function updateOffice(
   }
   const base = current.find((o) => o.id === id);
   if (!base) return { office: undefined, source: "local" };
-  const office: OfficeConfig = { ...base, ...updates };
+  const office: OfficeConfig = {
+    ...base,
+    ...updates,
+    ...(updates.characters ? { characters: withCharacterIds(updates.characters) } : {}),
+  };
   writeLocal(current.map((o) => (o.id === id ? office : o)));
   return { office, source: "local" };
 }
@@ -298,7 +308,7 @@ export async function assignRun(goal: string, officeId: string, c: CharLive): Pr
       body: JSON.stringify({
         goal,
         officeId,
-        characterId: String(c.id),
+        characterId: c.charId,
         ...(c.zone !== "hallway" ? { zone: c.zone } : {}),
       }),
     });

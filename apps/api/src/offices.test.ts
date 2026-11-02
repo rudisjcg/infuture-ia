@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildTestApp as buildApp } from "./test-auth";
 import { loadEnv } from "./env";
-import { DEFAULT_OFFICE_ID, MemoryOfficeStore } from "./offices/store";
+import { DEFAULT_OFFICE_ID, MemoryOfficeStore, withCharacterIds } from "./offices/store";
 import { LOCAL_WORKSPACE_ID } from "./connections/store";
 
 let app: FastifyInstance;
@@ -113,7 +113,7 @@ describe("office characters persistence", () => {
     shirt: "#4f46e5",
     hair: "#1e1b4b",
     skin: "#fcd34d",
-    accessory: "glasses",
+    accessory: "glasses" as const,
   };
 
   it("saves sprites added to an office and restores them on reload", async () => {
@@ -127,7 +127,8 @@ describe("office characters persistence", () => {
     expect(upd.statusCode).toBe(200);
     const after = (await app.inject({ method: "GET", url: `/api/v1/offices/${DEFAULT_OFFICE_ID}` })).json();
     expect(after.characters).toHaveLength(characters.length);
-    expect(after.characters.at(-1)).toEqual(sprite);
+    expect(after.characters.at(-1)).toMatchObject(sprite);
+    expect(after.characters.at(-1).id).toMatch(/^ch-/);
     expect(after).toMatchObject({
       name: "HQ edit",
       theme: "#0ea5e9",
@@ -149,6 +150,39 @@ describe("office characters persistence", () => {
       payload: { characters: Array.from({ length: 25 }, () => sprite) },
     });
     expect(tooMany.statusCode).toBe(400);
+  });
+});
+
+describe("stable character ids", () => {
+  const sprite = { ...DEFAULT_CHAR, name: "Ids" };
+  it("backfills legacy characters with their index and keeps ids on reorder", async () => {
+    expect(withCharacterIds([{ name: "a" }, { name: "b" }], String).map((c) => c.id)).toEqual(["0", "1"]);
+    const dup = withCharacterIds([{ id: "x" }, { id: "x" }, {}]);
+    expect(new Set(dup.map((c) => c.id)).size).toBe(3);
+    expect(dup[0]?.id).toBe("x");
+
+    const store = new MemoryOfficeStore();
+    const created = await store.createOffice(LOCAL_WORKSPACE_ID, {
+      name: "Ids",
+      theme: "#10b981",
+      zones: ["dev"],
+      characters: [sprite, { ...sprite, name: "Other" }],
+    });
+    const ids = created.characters.map((c) => c.id);
+    expect(ids.every((id) => /^ch-/.test(id))).toBe(true);
+    const reordered = await store.updateOffice(LOCAL_WORKSPACE_ID, created.id, {
+      characters: [...created.characters].reverse(),
+    });
+    expect(reordered?.characters.map((c) => c.id)).toEqual([...ids].reverse());
+  });
+
+  it("rejects malformed character ids", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/v1/offices/${DEFAULT_OFFICE_ID}`,
+      payload: { characters: [{ ...sprite, id: "bad id!" }] },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });
 
@@ -185,6 +219,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("PgOfficeStore", () => {
         characters: [{ ...DEFAULT_CHAR }],
       });
       expect(upd?.characters).toHaveLength(1);
+      expect(upd?.characters[0]?.id).toMatch(/^ch-/);
       expect(await store.deleteOffice(LOCAL_WORKSPACE_ID, created.id)).toBe(true);
     } finally {
       await close();

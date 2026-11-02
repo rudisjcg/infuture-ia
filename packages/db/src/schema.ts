@@ -210,6 +210,7 @@ export const runs = pgTable(
   },
   (t) => [
     index("runs_workspace_idx").on(t.workspaceId),
+    index("runs_office_idx").on(t.officeId),
     check("runs_locale_check", sql`${t.locale} in ('en', 'es')`),
   ],
 );

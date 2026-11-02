@@ -12,7 +12,16 @@ import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { useLocale } from "./i18n";
 
 export type AuthUser = { id: string; email: string; displayName: string | null; role: string };
-type Me = { kind: "user"; user: AuthUser } | { kind: "token"; user: null };
+type Me =
+  | { kind: "user"; user: AuthUser }
+  | { kind: "token"; user: null }
+  | { kind: "apiToken"; user: null; role: string; workspaceId: string };
+type AuthStatus = {
+  needsSetup: boolean;
+  signupOpen: boolean;
+  /** How the first (owner) account may be created, while no account exists. */
+  setupRequires: "api_token" | "loopback" | null;
+};
 
 const UNAUTHORIZED_EVENT = "infuture:unauthorized";
 
@@ -81,8 +90,9 @@ function LoadingScreen() {
 function LoginScreen({ onSuccess }: { onSuccess: () => Promise<void> }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  const [status, setStatus] = useState<{ needsSetup: boolean; signupOpen: boolean } | null>(null);
+  const [status, setStatus] = useState<AuthStatus | null>(null);
   const [mode, setMode] = useState<"login" | "signup">("login");
+  const [setupToken, setSetupToken] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -92,7 +102,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => Promise<void> }) {
   useEffect(() => {
     fetch("/api/v1/auth/status", { headers: { "X-Infuture-Locale": locale } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((s: { needsSetup: boolean; signupOpen: boolean } | null) => {
+      .then((s: AuthStatus | null) => {
         setStatus(s);
         if (s?.needsSetup) setMode("signup");
       })
@@ -106,9 +116,17 @@ function LoginScreen({ onSuccess }: { onSuccess: () => Promise<void> }) {
     try {
       const body =
         mode === "signup" ? { email, password, displayName: displayName || undefined } : { email, password };
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Infuture-Locale": locale,
+      };
+      // The first (owner) account needs the server's API_TOKEN when one is configured.
+      if (mode === "signup" && status?.setupRequires === "api_token" && setupToken.trim()) {
+        headers.Authorization = `Bearer ${setupToken.trim()}`;
+      }
       const res = await fetch(`/api/v1/auth/${mode}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Infuture-Locale": locale },
+        headers,
         body: JSON.stringify(body),
       });
       if (!res.ok) {
@@ -140,10 +158,26 @@ function LoginScreen({ onSuccess }: { onSuccess: () => Promise<void> }) {
         <p className="eyebrow mono">{t("app.name")}</p>
         <h1 id="auth-title">{title}</h1>
         {status?.needsSetup && <p className="muted">{t("auth.setupHint")}</p>}
+        {status?.setupRequires === "loopback" && <p className="muted">{t("auth.setupLoopbackHint")}</p>}
         <form className="auth-form" onSubmit={(e) => void submit(e)}>
           {error && (
             <div className="form-error-banner" role="alert">
               {error}
+            </div>
+          )}
+          {mode === "signup" && status?.setupRequires === "api_token" && (
+            <div className="form-group">
+              <label htmlFor="auth-setup-token">{t("auth.setupToken")}</label>
+              <input
+                id="auth-setup-token"
+                className="input"
+                type="password"
+                required
+                autoComplete="off"
+                value={setupToken}
+                onChange={(e) => setSetupToken(e.target.value)}
+              />
+              <small className="muted">{t("auth.setupTokenHint")}</small>
             </div>
           )}
           {mode === "signup" && (

@@ -56,6 +56,8 @@ export const ALL_ZONE_KEYS = Object.keys(ZONE_LAYOUT) as ZoneKey[];
 
 export type Accessory = "glasses" | "headphones" | "cap" | "badge";
 export type Template = {
+  /** Stable id used for run attribution; generated when missing (see withCharacterIds). */
+  id?: string;
   name: string;
   roleKey: string;
   color: string;
@@ -143,6 +145,34 @@ export type OfficeConfig = {
   isDefault: boolean;
 };
 
-export type CharSummary = { id: number; name: string; roleKey: string; color: string };
+/** id is the runtime index in the scene; charId is the stable id stored with the office. */
+export type CharSummary = { id: number; charId: string; name: string; roleKey: string; color: string };
+
+/** New random character id, e.g. "ch-1a2b3c4d5e". */
+export function newCharacterId(): string {
+  const raw =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().replace(/-/g, "")
+      : Math.random().toString(16).slice(2) + Date.now().toString(16);
+  return `ch-${raw.slice(0, 10)}`;
+}
+
+/**
+ * Gives every character a unique stable id. Missing ids get `fallback(index)`: the legacy
+ * index ("0", "1", ...) for stored offices, so runs attributed by index keep their character;
+ * duplicates get a random id.
+ */
+export function withCharacterIds<T extends Template>(
+  chars: T[],
+  fallback: (index: number) => string = () => newCharacterId(),
+): (T & { id: string })[] {
+  const seen = new Set<string>();
+  return chars.map((c, i) => {
+    let id = c.id ? c.id : fallback(i);
+    while (seen.has(id)) id = newCharacterId();
+    seen.add(id);
+    return { ...c, id };
+  });
+}
 /** Live view of a character for dashboards. */
 export type CharLive = CharSummary & { zone: ZoneOrHall; moving: boolean };

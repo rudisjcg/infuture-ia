@@ -17,6 +17,8 @@ function sessionCookie(setCookie: string | string[] | undefined): string {
   return `${SESSION_COOKIE}=${match[1]}`;
 }
 
+const SERVICE = { authorization: `Bearer ${TOKEN}` };
+
 const owner = { email: "Owner@Example.com", password: "correct horse battery", displayName: "Owner" };
 
 describe("password hashing", () => {
@@ -36,7 +38,7 @@ describe("auth routes", () => {
       expect((await app.inject({ url: "/health" })).statusCode).toBe(200);
       expect((await app.inject({ url: "/api/v1/info" })).statusCode).toBe(200);
       const status = await app.inject({ url: "/api/v1/auth/status" });
-      expect(status.json()).toEqual({ needsSetup: true, signupOpen: true });
+      expect(status.json()).toEqual({ needsSetup: true, signupOpen: true, setupRequires: "api_token" });
       for (const url of ["/api/v1/system/metrics", "/api/v1/offices", "/api/v1/runs", "/api/v1/auth/me"]) {
         const res = await app.inject({ url });
         expect(res.statusCode, url).toBe(401);
@@ -59,7 +61,12 @@ describe("auth routes", () => {
   it("signs up the first user as owner, then logs in, uses the session and logs out", async () => {
     const app = await makeApp();
     try {
-      const signup = await app.inject({ method: "POST", url: "/api/v1/auth/signup", payload: owner });
+      const signup = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/signup",
+        payload: owner,
+        headers: SERVICE,
+      });
       expect(signup.statusCode).toBe(201);
       expect(signup.json().user).toMatchObject({ email: "owner@example.com", role: "owner" });
       const setCookie = String(signup.headers["set-cookie"]);
@@ -68,7 +75,7 @@ describe("auth routes", () => {
 
       // Sign-up is closed after the first account by default.
       const status = await app.inject({ url: "/api/v1/auth/status" });
-      expect(status.json()).toEqual({ needsSetup: false, signupOpen: false });
+      expect(status.json()).toEqual({ needsSetup: false, signupOpen: false, setupRequires: null });
       const second = await app.inject({
         method: "POST",
         url: "/api/v1/auth/signup",
@@ -125,7 +132,7 @@ describe("auth routes", () => {
   it("allows more sign-ups when AUTH_SIGNUP_OPEN=true and rejects duplicate e-mails", async () => {
     const app = await makeApp({ AUTH_SIGNUP_OPEN: "true" });
     try {
-      await app.inject({ method: "POST", url: "/api/v1/auth/signup", payload: owner });
+      await app.inject({ method: "POST", url: "/api/v1/auth/signup", payload: owner, headers: SERVICE });
       const second = await app.inject({
         method: "POST",
         url: "/api/v1/auth/signup",
